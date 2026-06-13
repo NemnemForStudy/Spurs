@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>선수 상세 | Spurs Pulse</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./index.html" aria-label="Spurs Pulse 홈">
+        <span class="brand-mark">TH</span>
+        <span>
+          <strong>Spurs Pulse</strong>
+          <small>Tottenham fan desk</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="주요 섹션">
+        <a href="./korean.html">국문 피드</a>
+        <a href="./english.html">영문 피드</a>
+        <a href="./market.html">이적 시장</a>
+        <a href="./players.html">선수단</a>
+        <a href="./injuries.html">부상 이력</a>
+        <a href="./results.html">경기 결과</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="player-page">
+        <a class="back-link" href="./players.html">← 선수단</a>
+        <div id="playerDetail" class="player-detail-shell">
+          <div class="empty-state">선수 정보를 불러오는 중입니다.</div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

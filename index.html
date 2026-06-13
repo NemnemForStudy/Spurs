@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spurs Pulse | Tottenham Fan Desk</title>
+    <link rel="preconnect" href="https://upload.wikimedia.org" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Spurs Pulse 홈">
+        <span class="brand-mark">TH</span>
+        <span>
+          <strong>Spurs Pulse</strong>
+          <small>Tottenham fan desk</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="주요 섹션">
+        <a href="./korean.html">국문 피드</a>
+        <a href="./english.html">영문 피드</a>
+        <a href="./market.html">이적 시장</a>
+        <a href="./players.html">선수단</a>
+        <a href="./injuries.html">부상 이력</a>
+        <a href="./results.html">경기 결과</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-label="토트넘 최신 팬페이지">
+        <div class="hero-copy">
+          <p class="eyebrow">COYS / Local live feed</p>
+          <h1>토트넘 소식</h1>
+          <p>
+            이적시장 루머, 공식 발표, 해외 매체 기사, 팬카페에서 크게 도는 소식을 한 화면에 모았습니다.
+            새 시즌을 앞두고 무엇을 봐야 하는지 빠르게 잡아주는 팬페이지입니다.
+          </p>
+          <div class="hero-actions" aria-label="빠른 이동">
+            <a class="icon-link primary" href="./korean.html" title="국문 피드 보기">
+              <span aria-hidden="true">↯</span>
+              <span>국문 피드</span>
+            </a>
+            <a class="icon-link" href="./english.html" title="영문 피드 보기">
+              <span aria-hidden="true">⌕</span>
+              <span>영문 피드</span>
+            </a>
+            <a class="icon-link" href="./players.html" title="선수단 보기">
+              <span aria-hidden="true">#</span>
+              <span>선수단</span>
+            </a>
+            <a class="icon-link" href="./injuries.html" title="부상 이력 보기">
+              <span aria-hidden="true">+</span>
+              <span>부상 이력</span>
+            </a>
+            <a class="icon-link" href="./results.html" title="경기 결과 보기">
+              <span aria-hidden="true">=</span>
+              <span>경기 결과</span>
+            </a>
+          </div>
+          <dl class="hero-stats" aria-label="오늘의 요약 지표">
+            <div>
+              <dt>Korean</dt>
+              <dd>국문 요약</dd>
+            </div>
+            <div>
+              <dt>Market</dt>
+              <dd>이적 소식</dd>
+            </div>
+            <div>
+              <dt>Squad</dt>
+              <dd>선수단 정리</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="hero-visual" aria-label="토트넘 사진 모음">
+          <figure class="feature-photo">
+            <img
+              src="https://commons.wikimedia.org/wiki/Special:Redirect/file/Tottenham_Hotspur_Stadium_golden_hour_London_01.jpg?width=1400"
+              alt="골든아워의 Tottenham Hotspur Stadium"
+            />
+            <figcaption>Tottenham Hotspur Stadium, golden hour</figcaption>
+          </figure>
+          <div class="photo-pair">
+            <figure>
+              <img
+                src="https://commons.wikimedia.org/wiki/Special:Redirect/file/Tottenham_Hotspur_Stadium.jpg?width=760"
+                alt="Tottenham Hotspur Stadium 외관"
+              />
+              <figcaption>North London home</figcaption>
+            </figure>
+            <aside class="hero-panel" aria-label="오늘의 요약">
+              <p class="panel-label">오늘의 팬 체크</p>
+              <strong>카페발 번역, 해외 원문, 이적시장 소식을 따로 나눠 봅니다.</strong>
+              <span>기자 이름과 신뢰도 있는 출처를 우선으로 걸러서 토트넘 관련 소식만 모읍니다.</span>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="ticker" aria-label="핫 이슈">
+        <span>LIVE BOARD</span>
+        <div id="tickerTrack"></div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>영문 피드 | Spurs Pulse</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./index.html" aria-label="Spurs Pulse 홈">
+        <span class="brand-mark">TH</span>
+        <span>
+          <strong>Spurs Pulse</strong>
+          <small>Tottenham fan desk</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="주요 섹션">
+        <a href="./korean.html">국문 피드</a>
+        <a href="./english.html">영문 피드</a>
+        <a href="./market.html">이적 시장</a>
+        <a href="./players.html">선수단</a>
+        <a href="./injuries.html">부상 이력</a>
+        <a href="./results.html">경기 결과</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="live-section page-section" id="english-feed">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">English feed</p>
+            <h1>영문 피드</h1>
+          </div>
+          <div class="live-controls">
+            <span id="englishStatus">연결 확인 중</span>
+            <button id="refreshEnglish" class="icon-button" type="button" title="영문 피드 새로고침" aria-label="영문 피드 새로고침">↻</button>
+          </div>
+        </div>
+        <div id="englishGrid" class="live-grid" aria-live="polite"></div>
+        <div class="pager" aria-label="피드 페이지 이동">
+          <button id="prevEnglishPage" class="pager-button" type="button">이전</button>
+          <span id="englishPageStatus">1 / 1</span>
+          <button id="nextEnglishPage" class="pager-button" type="button">다음</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

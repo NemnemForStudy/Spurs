@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>선수단 | Spurs Pulse</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./index.html" aria-label="Spurs Pulse 홈">
+        <span class="brand-mark">TH</span>
+        <span>
+          <strong>Spurs Pulse</strong>
+          <small>Tottenham fan desk</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="주요 섹션">
+        <a href="./korean.html">국문 피드</a>
+        <a href="./english.html">영문 피드</a>
+        <a href="./market.html">이적 시장</a>
+        <a href="./players.html">선수단</a>
+        <a href="./injuries.html">부상 이력</a>
+        <a href="./results.html">경기 결과</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="squad-page">
+        <div class="squad-heading">
+          <div>
+            <p class="eyebrow">Tottenham squad</p>
+            <h1>선수단</h1>
+          </div>
+          <div class="live-controls">
+            <span id="squadStatus">선수단 확인 중</span>
+            <button id="refreshSquad" class="icon-button" type="button" title="선수단 새로고침" aria-label="선수단 새로고침">↻</button>
+          </div>
+        </div>
+
+        <div id="squadStats" class="squad-stats" aria-label="선수단 요약"></div>
+
+        <section class="depth-section" aria-labelledby="depthTitle">
+          <div class="squad-block-title">
+            <h2 id="depthTitle">포지션 뎁스차트</h2>
+            <span>복수 포지션 포함</span>
+          </div>
+          <div id="depthChart" class="depth-chart"></div>
+        </section>
+
+        <div class="squad-toolbar">
+          <label class="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input id="squadSearch" type="search" placeholder="선수, 국적, 포지션 검색" autocomplete="off" />
+          </label>
+          <div id="squadFilters" class="filter-row" aria-label="포지션 필터">
+            <button class="filter is-active" type="button" data-squad-filter="ALL">전체</button>
+            <button class="filter" type="button" data-squad-filter="GK">GK</button>
+            <button class="filter" type="button" data-squad-filter="DF">DF</button>
+            <button class="filter" type="button" data-squad-filter="MF">MF</button>
+            <button class="filter" type="button" data-squad-filter="FW">FW</button>
+            <button class="filter" type="button" data-squad-filter="LOAN">임대</button>
+          </div>
+        </div>
+
+        <div id="squadEmpty" class="empty-state squad-empty" hidden>표시할 선수가 없습니다.</div>
+
+        <section class="squad-block" aria-labelledby="firstTeamTitle">
+          <div class="squad-block-title">
+            <h2 id="firstTeamTitle">1군 선수단</h2>
+            <span id="firstTeamCount"></span>
+          </div>
+          <div class="squad-table-wrap">
+            <table class="squad-table">
+              <thead>
+                <tr>
+                  <th scope="col">사진</th>
+                  <th scope="col">번호</th>
+                  <th scope="col">선수</th>
+                  <th scope="col">포지션</th>
+                  <th scope="col">국적</th>
+                  <th scope="col">상태</th>
+                  <th scope="col">프로필</th>
+                </tr>
+              </thead>
+              <tbody id="firstTeamTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="squad-block" aria-labelledby="loanTitle">
+          <div class="squad-block-title">
+            <h2 id="loanTitle">임대 중</h2>
+            <span id="loanCount"></span>
+          </div>
+          <div class="squad-table-wrap">
+            <table class="squad-table">
+              <thead>
+                <tr>
+                  <th scope="col">사진</th>
+                  <th scope="col">번호</th>
+                  <th scope="col">선수</th>
+                  <th scope="col">포지션</th>
+                  <th scope="col">국적</th>
+                  <th scope="col">상태</th>
+                  <th scope="col">프로필</th>
+                </tr>
+              </thead>
+              <tbody id="loanTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
