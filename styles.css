@@ -164,6 +164,63 @@ textarea {
   line-height: 1.7;
 }
 
+.hero-cafe-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin-top: 18px;
+  padding: 10px 12px;
+  color: #eef8f2;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(141, 240, 183, 0.34);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(3, 10, 28, 0.16);
+}
+
+.hero-cafe-link:hover {
+  transform: translateY(-1px);
+  border-color: rgba(141, 240, 183, 0.72);
+  background: rgba(3, 199, 90, 0.17);
+}
+
+.naver-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #fff;
+  background: #03c75a;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.hero-cafe-link span:not(.naver-mark) {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.hero-cafe-link strong {
+  color: #fff;
+  font-weight: 950;
+}
+
+.hero-cafe-link b {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #07162f;
+  background: #fff;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
@@ -304,6 +361,8 @@ textarea {
 }
 
 .hero-panel {
+  display: block;
+  position: relative;
   min-height: 170px;
   padding: 16px;
   color: #172033;
