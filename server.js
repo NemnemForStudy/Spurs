@@ -12,6 +12,7 @@ const defaultFeedCacheMs = isProduction ? 3 * 60 * 1000 : 60_000;
 const cacheTtlMs = Number(process.env.FEED_CACHE_MS || defaultFeedCacheMs);
 const communityCacheTtlMs = Number(process.env.COMMUNITY_CACHE_MS || defaultFeedCacheMs);
 const squadCacheTtlMs = Number(process.env.SQUAD_CACHE_MS || 6 * 60 * 60 * 1000);
+const disableTransfermarktLive = process.env.DISABLE_TRANSFERMARKT_LIVE === "1";
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${displayHost}:${port}`;
 const crawlerUserAgent =
   `Mozilla/5.0 (compatible; SpursPulse/1.0; Tottenham fan dashboard; +${publicBaseUrl})`;
@@ -1164,6 +1165,16 @@ function injurySeasonUrl(seasonId = "") {
   return url.toString();
 }
 
+async function readSeasonSnapshot(kind, seasonId) {
+  try {
+    const raw = await fs.readFile(path.join(root, "data", `${kind}-${seasonId}.json`), "utf8");
+    const snapshot = JSON.parse(raw);
+    return Array.isArray(snapshot.items) ? snapshot : null;
+  } catch {
+    return null;
+  }
+}
+
 async function getInjuryFeed(seasonId = "") {
   const season = resolveInjurySeason(seasonId);
   const cached = injuryFeedCache.get(season.id);
@@ -1174,18 +1185,29 @@ async function getInjuryFeed(seasonId = "") {
   const squad = await getSquadFeed();
   let items = [];
   let dataSource = "transfermarkt";
+  let snapshotFilter = null;
 
   try {
+    if (disableTransfermarktLive) {
+      throw new Error("Transfermarkt live fetch disabled");
+    }
     const html = await fetchText(injurySeasonUrl(season.id), {
-      timeoutMs: 14_000,
+      timeoutMs: 45_000,
       headers: {
         "accept-language": "en-US,en;q=0.9",
       },
     });
     items = parseTransfermarktInjuries(html, squad.items);
   } catch {
-    dataSource = "unavailable";
-    items = [];
+    const snapshot = await readSeasonSnapshot("injuries", season.id);
+    if (snapshot) {
+      dataSource = "snapshot";
+      items = snapshot.items;
+      snapshotFilter = snapshot.filter || null;
+    } else {
+      dataSource = "unavailable";
+      items = [];
+    }
   }
 
   const payload = {
@@ -1199,7 +1221,7 @@ async function getInjuryFeed(seasonId = "") {
       seasons: injurySeasons,
       dataSource,
     },
-    filter: summarizeInjuries(items),
+    filter: snapshotFilter || summarizeInjuries(items),
     items,
   };
 
@@ -1380,18 +1402,29 @@ async function getResultFeed(seasonId = "") {
 
   let items = [];
   let dataSource = "transfermarkt";
+  let snapshotFilter = null;
 
   try {
+    if (disableTransfermarktLive) {
+      throw new Error("Transfermarkt live fetch disabled");
+    }
     const html = await fetchText(resultSeasonUrl(season.id), {
-      timeoutMs: 14_000,
+      timeoutMs: 45_000,
       headers: {
         "accept-language": "en-US,en;q=0.9",
       },
     });
     items = parseTransfermarktResults(html, season.id);
   } catch {
-    dataSource = "unavailable";
-    items = [];
+    const snapshot = await readSeasonSnapshot("results", season.id);
+    if (snapshot) {
+      dataSource = "snapshot";
+      items = snapshot.items;
+      snapshotFilter = snapshot.filter || null;
+    } else {
+      dataSource = "unavailable";
+      items = [];
+    }
   }
 
   const payload = {
@@ -1405,7 +1438,7 @@ async function getResultFeed(seasonId = "") {
       seasons: resultSeasons,
       dataSource,
     },
-    filter: summarizeResults(items),
+    filter: snapshotFilter || summarizeResults(items),
     items,
   };
 
