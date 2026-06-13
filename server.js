@@ -218,6 +218,8 @@ let squadFeedCache = {
   payload: null,
 };
 
+const imageProxyCache = new Map();
+
 const injuryFeedCache = new Map();
 
 const resultFeedCache = new Map();
@@ -497,6 +499,14 @@ function sendText(response, statusCode, text, headers = {}) {
   response.end(text);
 }
 
+function sendHealth(request, response) {
+  response.writeHead(200, responseHeaders({
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "no-store",
+  }));
+  response.end(request.method === "HEAD" ? undefined : "ok");
+}
+
 function isRateLimited(request) {
   const key = request.socket.remoteAddress || "local";
   const now = Date.now();
@@ -603,6 +613,117 @@ function isSafeHttpUrl(url) {
     return ["http:", "https:"].includes(parsed.protocol);
   } catch {
     return false;
+  }
+}
+
+const allowedImageProxyHosts = new Set([
+  "resources.thfc.pulselive.com",
+  "tmssl.akamaized.net",
+]);
+
+const imageProxyCacheTtlMs = Number(process.env.IMAGE_CACHE_MS || 12 * 60 * 60 * 1000);
+const maxImageProxyBytes = Number(process.env.MAX_IMAGE_BYTES || 5 * 1024 * 1024);
+
+function normalizeProxyImageUrl(value = "") {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" || !allowedImageProxyHosts.has(parsed.hostname)) return "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function imageRefererFor(url = "") {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "resources.thfc.pulselive.com") return "https://www.tottenhamhotspur.com/";
+    if (parsed.hostname === "tmssl.akamaized.net") return "https://www.transfermarkt.com/";
+  } catch {
+    return publicBaseUrl;
+  }
+  return publicBaseUrl;
+}
+
+async function sendProxiedImage(request, response, imageUrl = "") {
+  const url = normalizeProxyImageUrl(imageUrl);
+  if (!url) {
+    sendText(response, 400, "Unsupported image URL");
+    return;
+  }
+
+  const cached = imageProxyCache.get(url);
+  if (cached && Date.now() < cached.expiresAt) {
+    response.writeHead(200, responseHeaders({
+      "content-type": cached.contentType,
+      "cache-control": "public, max-age=43200",
+      "content-length": cached.buffer.length,
+    }));
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
+    response.end(cached.buffer);
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+
+  try {
+    const upstream = await fetch(url, {
+      headers: {
+        "user-agent": crawlerUserAgent,
+        accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        referer: imageRefererFor(url),
+      },
+      signal: controller.signal,
+    });
+
+    if (!upstream.ok) {
+      sendText(response, upstream.status, "Image unavailable");
+      return;
+    }
+
+    const contentType = (upstream.headers.get("content-type") || "").split(";")[0].toLowerCase();
+    if (!/^image\/(png|jpe?g|webp|gif|svg\+xml)$/.test(contentType)) {
+      sendText(response, 415, "Unsupported image type");
+      return;
+    }
+
+    const contentLength = Number(upstream.headers.get("content-length") || 0);
+    if (contentLength && contentLength > maxImageProxyBytes) {
+      sendText(response, 413, "Image too large");
+      return;
+    }
+
+    const bytes = Buffer.from(await upstream.arrayBuffer());
+    if (bytes.length > maxImageProxyBytes) {
+      sendText(response, 413, "Image too large");
+      return;
+    }
+
+    imageProxyCache.set(url, {
+      buffer: bytes,
+      contentType,
+      expiresAt: Date.now() + imageProxyCacheTtlMs,
+    });
+
+    response.writeHead(200, responseHeaders({
+      "content-type": contentType,
+      "cache-control": "public, max-age=43200",
+      "content-length": bytes.length,
+    }));
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
+    response.end(bytes);
+  } catch {
+    sendText(response, 502, "Image proxy failed");
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -2149,8 +2270,8 @@ async function serveStatic(request, response) {
 
 const server = http.createServer(async (request, response) => {
   try {
-    if (request.method !== "GET") {
-      sendText(response, 405, "Method not allowed", { allow: "GET" });
+    if (!["GET", "HEAD"].includes(request.method)) {
+      sendText(response, 405, "Method not allowed", { allow: "GET, HEAD" });
       return;
     }
 
@@ -2160,6 +2281,14 @@ const server = http.createServer(async (request, response) => {
     }
 
     const url = new URL(request.url, `http://${request.headers.host}`);
+    if (url.pathname === "/healthz") {
+      sendHealth(request, response);
+      return;
+    }
+    if (url.pathname === "/api/image") {
+      await sendProxiedImage(request, response, url.searchParams.get("url") || "");
+      return;
+    }
     if (url.pathname === "/api/x-feed") {
       sendJson(response, 200, await getXFeed());
       return;

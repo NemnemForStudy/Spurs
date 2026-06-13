@@ -176,6 +176,20 @@ function safeHttpUrl(value = "") {
   }
 }
 
+function proxiedImageUrl(value = "") {
+  const url = safeHttpUrl(value);
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    if (["resources.thfc.pulselive.com", "tmssl.akamaized.net"].includes(parsed.hostname)) {
+      return `/api/image?url=${encodeURIComponent(parsed.href)}`;
+    }
+    return url;
+  } catch {
+    return "";
+  }
+}
+
 const countryLabels = {
   Argentina: "아르헨티나",
   Austria: "오스트리아",
@@ -520,7 +534,7 @@ function renderSquadRows(items) {
   return items
     .map((item) => {
       const href = safeHttpUrl(item.profileUrl);
-      const imageUrl = safeHttpUrl(item.imageUrl);
+      const imageUrl = proxiedImageUrl(item.imageUrl);
       const koreanName = item.nameKo || item.name;
       const showEnglishName = item.name && item.name !== koreanName;
       const initials = item.name
@@ -656,7 +670,7 @@ function factRows(player) {
 function renderPlayerDetail(payload) {
   if (!playerDetailElement) return;
   const player = payload.player;
-  const imageUrl = safeHttpUrl(player.imageUrl);
+  const imageUrl = proxiedImageUrl(player.imageUrl);
   const officialUrl = safeHttpUrl(player.profileUrl);
   const koreanName = player.nameKo || player.name;
   const summary = `${koreanName}는 ${displayNationality(player.nationality)} 국적의 ${player.positionLabel || player.position}입니다. 현재 상태는 ${player.statusLabel || "선수단"}이며, 포지션 뎁스차트에서는 ${(player.depthRoles || []).join(", ") || player.positionGroup}로 분류됩니다.`;
@@ -780,7 +794,7 @@ function renderInjuries() {
         item.fromMatchday === item.toMatchday
           ? `${item.fromMatchday}R`
           : `${item.fromMatchday}R-${item.toMatchday}R`;
-      const imageUrl = safeHttpUrl(item.playerImageUrl);
+      const imageUrl = proxiedImageUrl(item.playerImageUrl);
       return `
         <tr>
           <td>
@@ -1051,7 +1065,7 @@ function renderResults() {
   const items = filteredResultItems();
   resultElements.table.innerHTML = items
     .map((item) => {
-      const logoUrl = safeHttpUrl(item.opponentLogoUrl);
+      const logoUrl = proxiedImageUrl(item.opponentLogoUrl);
       const reportUrl = safeHttpUrl(item.matchReportUrl);
       const opponentUrl = safeHttpUrl(item.opponentUrl);
       const opponentName = item.opponentName || item.opponentFullName || "-";
@@ -1075,7 +1089,7 @@ function renderResults() {
             <div class="result-opponent">
               ${
                 logoUrl
-                  ? `<img class="result-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(opponentNameKo)} 로고" loading="lazy" decoding="async" />`
+                  ? `<img class="result-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(opponentNameKo)} 로고" loading="eager" decoding="async" />`
                   : `<span class="result-logo placeholder" aria-hidden="true">TH</span>`
               }
               <span>
