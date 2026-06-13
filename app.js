@@ -52,6 +52,14 @@ const resultState = {
   requestId: 0,
 };
 
+const worldCupState = {
+  items: [],
+  payload: null,
+  filter: "ALL",
+  query: "",
+  requestId: 0,
+};
+
 const feeds = {
   korean: {
     endpoint: "/api/korean-feed",
@@ -96,6 +104,7 @@ const warmableEndpoints = [
   "/api/squad",
   "/api/injuries",
   "/api/results",
+  "/api/world-cup",
 ];
 
 const navEndpointByPage = {
@@ -105,6 +114,7 @@ const navEndpointByPage = {
   "players.html": "/api/squad",
   "injuries.html": "/api/injuries",
   "results.html": "/api/results",
+  "worldcup.html": "/api/world-cup",
 };
 
 const squadElements = {
@@ -145,6 +155,16 @@ const resultElements = {
   empty: document.querySelector("#resultEmpty"),
 };
 
+const worldCupElements = {
+  stats: document.querySelector("#worldCupStats"),
+  status: document.querySelector("#worldCupStatus"),
+  refresh: document.querySelector("#refreshWorldCup"),
+  search: document.querySelector("#worldCupSearch"),
+  filters: document.querySelector("#worldCupFilters"),
+  grid: document.querySelector("#worldCupGrid"),
+  empty: document.querySelector("#worldCupEmpty"),
+};
+
 const depthSlots = [
   ["GK", "GK"],
   ["CB", "CB"],
@@ -181,7 +201,7 @@ function proxiedImageUrl(value = "") {
   if (!url) return "";
   try {
     const parsed = new URL(url);
-    if (["resources.thfc.pulselive.com", "tmssl.akamaized.net"].includes(parsed.hostname)) {
+    if (["resources.thfc.pulselive.com", "tmssl.akamaized.net", "a.espncdn.com"].includes(parsed.hostname)) {
       return `/api/image?url=${encodeURIComponent(parsed.href)}`;
     }
     return url;
@@ -1038,26 +1058,28 @@ function renderResultFilters() {
 
 function filteredResultItems() {
   const query = resultState.query.trim().toLowerCase();
-  return resultState.items.filter((item) => {
-    const matchesFilter = resultState.filter === "ALL" || item.competition === resultState.filter;
-    if (!matchesFilter) return false;
-    if (!query) return true;
+  return resultState.items
+    .filter((item) => {
+      const matchesFilter = resultState.filter === "ALL" || item.competition === resultState.filter;
+      if (!matchesFilter) return false;
+      if (!query) return true;
 
-    return [
-      item.competition,
-      resultCompetitionKorean(item.competition),
-      item.matchday,
-      item.opponentName,
-      item.opponentFullName,
-      resultOpponentKorean(item.opponentName),
-      item.venueLabel,
-      item.result,
-      item.outcomeLabel,
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(query);
-  });
+      return [
+        item.competition,
+        resultCompetitionKorean(item.competition),
+        item.matchday,
+        item.opponentName,
+        item.opponentFullName,
+        resultOpponentKorean(item.opponentName),
+        item.venueLabel,
+        item.result,
+        item.outcomeLabel,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    })
+    .sort((a, b) => String(b.sortKey || "").localeCompare(String(a.sortKey || "")));
 }
 
 function renderResults() {
@@ -1152,6 +1174,199 @@ async function refreshResults() {
     }
     renderResultFilters();
     renderResults();
+  }
+}
+
+function worldCupStatusText(payload) {
+  const filter = payload?.filter || {};
+  return `2026 월드컵 · ${filter.today ?? 0}경기 오늘 · ${filter.live ?? 0}경기 진행중 · ${formatDate(payload.refreshedAt)} 갱신`;
+}
+
+function renderWorldCupStats(payload) {
+  if (!worldCupElements.stats) return;
+  const filter = payload?.filter || {};
+  const stats = [
+    ["전체 경기", filter.shownCount ?? 0],
+    ["오늘", filter.today ?? 0],
+    ["라이브", filter.live ?? 0],
+    ["종료", filter.completed ?? 0],
+    ["예정", filter.scheduled ?? 0],
+    ["대한민국", filter.korea ?? 0],
+  ];
+
+  worldCupElements.stats.innerHTML = stats
+    .map(
+      ([label, value]) => `
+        <div class="squad-stat">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function worldCupDateKey(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
+}
+
+function isWorldCupToday(item) {
+  return worldCupDateKey(item.date) === worldCupDateKey(new Date().toISOString());
+}
+
+function formatWorldCupDate(value) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "short",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function worldCupScoreText(item) {
+  if (item.status === "pre") return "예정";
+  const homeScore = item.home?.score ?? "";
+  const awayScore = item.away?.score ?? "";
+  if (homeScore === "" || awayScore === "") return item.statusLabel || "-";
+  return `${homeScore} - ${awayScore}`;
+}
+
+function worldCupTeamMarkup(team = {}, side = "", showScore = true) {
+  const logoUrl = proxiedImageUrl(team.logoUrl);
+  const nameKo = team.nameKo || team.name || "-";
+  return `
+    <div class="worldcup-team ${team.winner ? "is-winner" : ""}">
+      ${
+        logoUrl
+          ? `<img class="worldcup-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(nameKo)} 로고" loading="lazy" decoding="async" />`
+          : `<span class="worldcup-logo placeholder" aria-hidden="true">${escapeHtml(team.abbreviation || side)}</span>`
+      }
+      <span>
+        <strong>${escapeHtml(nameKo)}</strong>
+        ${team.name && team.name !== nameKo ? `<small>${escapeHtml(team.abbreviation ? `${team.abbreviation} · ${team.name}` : team.name)}</small>` : ""}
+      </span>
+      ${showScore && team.score !== "" && team.score !== undefined ? `<b>${escapeHtml(team.score)}</b>` : ""}
+    </div>
+  `;
+}
+
+function filteredWorldCupItems() {
+  const query = worldCupState.query.trim().toLowerCase();
+  return worldCupState.items.filter((item) => {
+    const teamNames = [item.home?.name, item.home?.nameKo, item.away?.name, item.away?.nameKo].filter(Boolean);
+    const matchesFilter =
+      worldCupState.filter === "ALL" ||
+      (worldCupState.filter === "TODAY" && isWorldCupToday(item)) ||
+      (worldCupState.filter === "LIVE" && item.status === "in") ||
+      (worldCupState.filter === "KOREA" && teamNames.includes("South Korea")) ||
+      (worldCupState.filter === "COMPLETED" && item.completed) ||
+      (worldCupState.filter === "UPCOMING" && !item.completed && item.status !== "in");
+
+    if (!matchesFilter) return false;
+    if (!query) return true;
+
+    return [
+      item.phase,
+      item.statusLabel,
+      item.venue,
+      item.venueCity,
+      item.venueCountry,
+      item.home?.name,
+      item.home?.nameKo,
+      item.away?.name,
+      item.away?.nameKo,
+      item.broadcasts?.join(" "),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(query);
+  });
+}
+
+function renderWorldCup() {
+  if (!worldCupElements.grid) return;
+  const items = filteredWorldCupItems();
+  worldCupElements.grid.innerHTML = items
+    .map((item) => {
+      const summaryUrl = safeHttpUrl(item.summaryUrl);
+      const venueText = [item.venue, item.venueCity].filter(Boolean).join(" · ");
+      const broadcastText = item.broadcasts?.length ? item.broadcasts.join(" · ") : "";
+      const scoreText = worldCupScoreText(item);
+      const statusText = item.statusLabel && item.statusLabel !== scoreText ? item.statusLabel : "";
+      return `
+        <article class="worldcup-card status-${escapeHtml(item.status || "pre")}">
+          <header>
+            <span>${escapeHtml(item.phase || "월드컵")}</span>
+            <time>${escapeHtml(formatWorldCupDate(item.date))}</time>
+          </header>
+          <div class="worldcup-scoreline">
+            ${worldCupTeamMarkup(item.home, "H", item.status !== "pre")}
+            <div class="worldcup-score">
+              <strong>${escapeHtml(scoreText)}</strong>
+              <span>${escapeHtml(statusText)}</span>
+            </div>
+            ${worldCupTeamMarkup(item.away, "A", item.status !== "pre")}
+          </div>
+          <footer>
+            <span>${escapeHtml(venueText || "-")}</span>
+            ${broadcastText ? `<small>${escapeHtml(broadcastText)}</small>` : ""}
+            ${summaryUrl ? `<a href="${escapeHtml(summaryUrl)}" target="_blank" rel="noopener noreferrer">ESPN</a>` : ""}
+          </footer>
+        </article>
+      `;
+    })
+    .join("");
+
+  if (worldCupElements.empty) worldCupElements.empty.hidden = Boolean(items.length);
+}
+
+async function refreshWorldCup() {
+  if (!worldCupElements.grid) return;
+  const requestId = ++worldCupState.requestId;
+  const endpoint = "/api/world-cup";
+  const cached = readCachedPayload(endpoint);
+  if (cached && !worldCupState.items.length) {
+    worldCupState.payload = cached;
+    worldCupState.items = cached.items || [];
+    if (worldCupElements.status) worldCupElements.status.textContent = worldCupStatusText(cached);
+    renderWorldCupStats(cached);
+    renderWorldCup();
+  } else if (worldCupElements.status) {
+    worldCupElements.status.textContent = "월드컵 일정 확인 중";
+    worldCupState.items = [];
+    renderWorldCup();
+  }
+
+  try {
+    const response = await fetch(endpoint, { cache: "no-store" });
+    if (!response.ok) throw new Error("world cup unavailable");
+    const payload = await response.json();
+    if (requestId !== worldCupState.requestId) return;
+    worldCupState.payload = payload;
+    worldCupState.items = payload.items || [];
+    writeCachedPayload(endpoint, payload);
+    if (worldCupElements.status) worldCupElements.status.textContent = worldCupStatusText(payload);
+    renderWorldCupStats(payload);
+    renderWorldCup();
+    warmOtherCaches(endpoint);
+  } catch {
+    if (worldCupElements.status) {
+      worldCupElements.status.textContent = worldCupState.items.length ? worldCupStatusText(worldCupState.payload) : "월드컵 일정 연결 실패";
+    }
+    renderWorldCup();
   }
 }
 
@@ -1273,6 +1488,21 @@ resultElements.seasons?.addEventListener("click", (event) => {
   refreshResults();
 });
 
+worldCupElements.refresh?.addEventListener("click", refreshWorldCup);
+worldCupElements.search?.addEventListener("input", (event) => {
+  worldCupState.query = event.target.value || "";
+  renderWorldCup();
+});
+worldCupElements.filters?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-worldcup-filter]");
+  if (!button) return;
+  worldCupState.filter = button.dataset.worldcupFilter || "ALL";
+  worldCupElements.filters.querySelectorAll("[data-worldcup-filter]").forEach((filter) => {
+    filter.classList.toggle("is-active", filter === button);
+  });
+  renderWorldCup();
+});
+
 document.querySelectorAll(".top-nav a").forEach((link) => {
   const page = new URL(link.href, window.location.href).pathname.split("/").pop();
   const endpoint = navEndpointByPage[page];
@@ -1299,9 +1529,11 @@ refreshSquad();
 refreshPlayerDetail();
 refreshInjuries();
 refreshResults();
+refreshWorldCup();
 window.setInterval(() => {
   refreshFeed("korean");
   refreshFeed("english");
   refreshFeed("transfer");
   refreshResults();
+  refreshWorldCup();
 }, 60_000);

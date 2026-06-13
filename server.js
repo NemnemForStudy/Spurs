@@ -225,6 +225,11 @@ const injuryFeedCache = new Map();
 
 const resultFeedCache = new Map();
 
+let worldCupFeedCache = {
+  expiresAt: 0,
+  payload: null,
+};
+
 const playerDetailCache = new Map();
 
 const translationCache = new Map();
@@ -272,6 +277,12 @@ const injurySource = {
 const resultSource = {
   label: "Transfermarkt",
   baseUrl: "https://www.transfermarkt.com/tottenham-hotspur/spielplan/verein/148/saison_id/",
+};
+
+const worldCupSource = {
+  label: "ESPN",
+  url: "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260611-20260719&limit=200",
+  publicUrl: "https://www.espn.com/soccer/scoreboard/_/league/fifa.world",
 };
 
 const injurySeasons = [
@@ -447,6 +458,7 @@ const allowedStaticFiles = new Set([
   "player.html",
   "injuries.html",
   "results.html",
+  "worldcup.html",
   "styles.css",
   "app.js",
 ]);
@@ -456,7 +468,7 @@ const securityHeaders = {
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self'",
-    "img-src 'self' https://commons.wikimedia.org https://upload.wikimedia.org https://resources.thfc.pulselive.com https://tmssl.akamaized.net data:",
+    "img-src 'self' https://commons.wikimedia.org https://upload.wikimedia.org https://resources.thfc.pulselive.com https://tmssl.akamaized.net https://a.espncdn.com data:",
     "connect-src 'self'",
     "font-src 'self'",
     "object-src 'none'",
@@ -620,6 +632,7 @@ function isSafeHttpUrl(url) {
 const allowedImageProxyHosts = new Set([
   "resources.thfc.pulselive.com",
   "tmssl.akamaized.net",
+  "a.espncdn.com",
 ]);
 
 const imageProxyCacheTtlMs = Number(process.env.IMAGE_CACHE_MS || 12 * 60 * 60 * 1000);
@@ -641,6 +654,7 @@ function imageRefererFor(url = "") {
     const parsed = new URL(url);
     if (parsed.hostname === "resources.thfc.pulselive.com") return "https://www.tottenhamhotspur.com/";
     if (parsed.hostname === "tmssl.akamaized.net") return "https://www.transfermarkt.com/";
+    if (parsed.hostname === "a.espncdn.com") return "https://www.espn.com/";
   } catch {
     return publicBaseUrl;
   }
@@ -1377,7 +1391,15 @@ function parseTransfermarktResults(html = "", seasonId = "") {
     });
   });
 
-  return items.sort((a, b) => a.sortKey.localeCompare(b.sortKey) || a.competition.localeCompare(b.competition));
+  return sortResultItems(items);
+}
+
+function sortResultItems(items = []) {
+  return [...items].sort(
+    (a, b) =>
+      String(b.sortKey || "").localeCompare(String(a.sortKey || "")) ||
+      String(a.competition || "").localeCompare(String(b.competition || "")),
+  );
 }
 
 function summarizeResults(items = []) {
@@ -1427,6 +1449,8 @@ async function getResultFeed(seasonId = "") {
     }
   }
 
+  items = sortResultItems(items);
+
   const payload = {
     mode: "results",
     refreshedAt: new Date().toISOString(),
@@ -1446,6 +1470,231 @@ async function getResultFeed(seasonId = "") {
     expiresAt: Date.now() + cacheTtlMs,
     payload,
   });
+
+  return payload;
+}
+
+const worldCupTeamLabels = {
+  Algeria: "알제리",
+  Argentina: "아르헨티나",
+  Australia: "호주",
+  Austria: "오스트리아",
+  Belgium: "벨기에",
+  "Bosnia-Herzegovina": "보스니아 헤르체고비나",
+  Brazil: "브라질",
+  Canada: "캐나다",
+  "Cape Verde": "카보베르데",
+  Colombia: "콜롬비아",
+  "Congo DR": "DR콩고",
+  Croatia: "크로아티아",
+  "Curaçao": "퀴라소",
+  Czechia: "체코",
+  Ecuador: "에콰도르",
+  Egypt: "이집트",
+  England: "잉글랜드",
+  France: "프랑스",
+  Germany: "독일",
+  Ghana: "가나",
+  Haiti: "아이티",
+  Iran: "이란",
+  Iraq: "이라크",
+  "Ivory Coast": "코트디부아르",
+  Japan: "일본",
+  Jordan: "요르단",
+  Mexico: "멕시코",
+  Morocco: "모로코",
+  Netherlands: "네덜란드",
+  "New Zealand": "뉴질랜드",
+  Norway: "노르웨이",
+  Panama: "파나마",
+  Paraguay: "파라과이",
+  Portugal: "포르투갈",
+  Qatar: "카타르",
+  "Saudi Arabia": "사우디아라비아",
+  Scotland: "스코틀랜드",
+  Senegal: "세네갈",
+  "South Africa": "남아공",
+  "South Korea": "대한민국",
+  Spain: "스페인",
+  Sweden: "스웨덴",
+  Switzerland: "스위스",
+  Tunisia: "튀니지",
+  Türkiye: "튀르키예",
+  "United States": "미국",
+  Uruguay: "우루과이",
+  Uzbekistan: "우즈베키스탄",
+};
+
+function worldCupTeamKo(name = "") {
+  if (worldCupTeamLabels[name]) return worldCupTeamLabels[name];
+
+  const groupWinner = name.match(/^Group ([A-L]) Winner$/i);
+  if (groupWinner) return `${groupWinner[1].toUpperCase()}조 1위`;
+
+  const groupSecond = name.match(/^Group ([A-L]) 2nd Place$/i);
+  if (groupSecond) return `${groupSecond[1].toUpperCase()}조 2위`;
+
+  const thirdPlace = name.match(/^Third Place Group (.+)$/i);
+  if (thirdPlace) return `3위 와일드카드 ${thirdPlace[1]}`;
+
+  const roundWinner = name.match(/^Round of (\d+) (\d+) Winner$/i);
+  if (roundWinner) return `${roundWinner[1]}강 ${roundWinner[2]}경기 승자`;
+
+  const quarterWinner = name.match(/^Quarterfinal (\d+) Winner$/i);
+  if (quarterWinner) return `8강 ${quarterWinner[1]}경기 승자`;
+
+  const semiResult = name.match(/^Semifinal (\d+) (Winner|Loser)$/i);
+  if (semiResult) return `준결승 ${semiResult[1]}경기 ${semiResult[2].toLowerCase() === "winner" ? "승자" : "패자"}`;
+
+  return name || "-";
+}
+
+function worldCupPhaseKo(slug = "", note = "") {
+  const group = note.match(/Group ([A-L])/i);
+  if (group) return `${group[1].toUpperCase()}조`;
+
+  const labels = {
+    "group-stage": "조별리그",
+    "round-of-32": "32강",
+    "round-of-16": "16강",
+    quarterfinals: "8강",
+    semifinals: "준결승",
+    "3rd-place-match": "3·4위전",
+    final: "결승",
+  };
+  return labels[slug] || "월드컵";
+}
+
+function worldCupStatusKo(status = {}) {
+  const type = status.type || {};
+  if (type.state === "in") return type.shortDetail || type.detail || "진행중";
+  if (type.completed) return "종료";
+  return "예정";
+}
+
+function normalizeWorldCupCompetitor(competitor = {}) {
+  const team = competitor.team || {};
+  const name = team.displayName || team.shortDisplayName || team.name || "";
+  return {
+    id: team.id || competitor.id || "",
+    name,
+    nameKo: worldCupTeamKo(name),
+    abbreviation: team.abbreviation || "",
+    logoUrl: team.logo || "",
+    score: competitor.score ?? "",
+    homeAway: competitor.homeAway || "",
+    winner: Boolean(competitor.winner),
+    record: competitor.records?.find((record) => record.type === "total")?.summary || "",
+  };
+}
+
+function normalizeWorldCupEvent(event = {}) {
+  const competition = event.competitions?.[0] || {};
+  const competitors = competition.competitors || [];
+  const home = competitors.find((item) => item.homeAway === "home") || competitors[0] || {};
+  const away = competitors.find((item) => item.homeAway === "away") || competitors[1] || {};
+  const status = event.status || competition.status || {};
+  const summaryUrl =
+    event.links?.find((link) => link.rel?.includes("summary"))?.href ||
+    competition.links?.find((link) => link.rel?.includes("summary"))?.href ||
+    "";
+  const broadcasts = competition.broadcasts?.flatMap((broadcast) => broadcast.names || []).filter(Boolean) || [];
+  const venue = competition.venue || {};
+  const venueCity = venue.address?.city || "";
+  const venueCountry = venue.address?.country || "";
+
+  return {
+    id: event.id || competition.id || "",
+    date: event.date || competition.date || "",
+    sortKey: event.date || competition.date || "",
+    phase: worldCupPhaseKo(event.season?.slug || "", competition.altGameNote || ""),
+    phaseSlug: event.season?.slug || "",
+    note: competition.altGameNote || "",
+    status: status.type?.state || "",
+    statusLabel: worldCupStatusKo(status),
+    completed: Boolean(status.type?.completed),
+    detail: status.type?.detail || "",
+    shortDetail: status.type?.shortDetail || "",
+    clock: status.displayClock || "",
+    venue: venue.fullName || event.venue?.displayName || "",
+    venueCity,
+    venueCountry,
+    broadcasts: [...new Set(broadcasts)].slice(0, 4),
+    home: normalizeWorldCupCompetitor(home),
+    away: normalizeWorldCupCompetitor(away),
+    summaryUrl: absoluteUrl(summaryUrl, worldCupSource.publicUrl),
+  };
+}
+
+function sortWorldCupItems(items = []) {
+  return [...items].sort((a, b) => String(a.sortKey || "").localeCompare(String(b.sortKey || "")));
+}
+
+function summarizeWorldCup(items = []) {
+  const now = new Date();
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+  const dateKey = (value) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(value));
+
+  return {
+    shownCount: items.length,
+    completed: items.filter((item) => item.completed).length,
+    live: items.filter((item) => item.status === "in").length,
+    scheduled: items.filter((item) => item.status === "pre").length,
+    today: items.filter((item) => item.date && dateKey(item.date) === todayKey).length,
+    korea: items.filter((item) => [item.home?.name, item.away?.name].includes("South Korea")).length,
+  };
+}
+
+async function getWorldCupFeed() {
+  if (worldCupFeedCache.payload && Date.now() < worldCupFeedCache.expiresAt) {
+    return worldCupFeedCache.payload;
+  }
+
+  let items = [];
+  let dataSource = "espn";
+
+  try {
+    const raw = await fetchText(worldCupSource.url, {
+      timeoutMs: 20_000,
+      headers: {
+        accept: "application/json,text/plain,*/*",
+      },
+    });
+    const data = JSON.parse(raw);
+    items = sortWorldCupItems((data.events || []).map(normalizeWorldCupEvent).filter((item) => item.id));
+  } catch {
+    dataSource = "unavailable";
+    items = [];
+  }
+
+  const payload = {
+    mode: "world-cup",
+    refreshedAt: new Date().toISOString(),
+    source: {
+      label: worldCupSource.label,
+      url: worldCupSource.publicUrl,
+      dataSource,
+    },
+    filter: summarizeWorldCup(items),
+    items,
+  };
+
+  worldCupFeedCache = {
+    expiresAt: Date.now() + defaultFeedCacheMs,
+    payload,
+  };
 
   return payload;
 }
@@ -2357,6 +2606,10 @@ const server = http.createServer(async (request, response) => {
     }
     if (url.pathname === "/api/results") {
       sendJson(response, 200, await getResultFeed(url.searchParams.get("season") || ""));
+      return;
+    }
+    if (url.pathname === "/api/world-cup") {
+      sendJson(response, 200, await getWorldCupFeed());
       return;
     }
     await serveStatic(request, response);

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>월드컵 | Spurs Pulse</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./index.html" aria-label="Spurs Pulse 홈">
+        <span class="brand-mark">TH</span>
+        <span>
+          <strong>Spurs Pulse</strong>
+          <small>Tottenham fan desk</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="주요 섹션">
+        <a href="./korean.html">국문 피드</a>
+        <a href="./english.html">영문 피드</a>
+        <a href="./market.html">이적 시장</a>
+        <a href="./players.html">선수단</a>
+        <a href="./injuries.html">부상 이력</a>
+        <a href="./results.html">경기 결과</a>
+        <a href="./worldcup.html">월드컵</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="worldcup-page">
+        <div class="squad-heading worldcup-heading">
+          <div>
+            <p class="eyebrow">FIFA World Cup 2026</p>
+            <h1>월드컵</h1>
+          </div>
+          <div class="live-controls">
+            <span id="worldCupStatus">월드컵 일정 확인 중</span>
+            <button id="refreshWorldCup" class="icon-button" type="button" title="월드컵 일정 새로고침" aria-label="월드컵 일정 새로고침">↻</button>
+          </div>
+        </div>
+
+        <div id="worldCupStats" class="squad-stats worldcup-stats" aria-label="월드컵 요약"></div>
+
+        <div class="squad-toolbar worldcup-toolbar">
+          <label class="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input id="worldCupSearch" type="search" placeholder="국가, 조, 경기장 검색" autocomplete="off" />
+          </label>
+          <div id="worldCupFilters" class="filter-row" aria-label="월드컵 필터">
+            <button class="filter is-active" type="button" data-worldcup-filter="ALL">전체</button>
+            <button class="filter" type="button" data-worldcup-filter="TODAY">오늘</button>
+            <button class="filter" type="button" data-worldcup-filter="LIVE">라이브</button>
+            <button class="filter" type="button" data-worldcup-filter="KOREA">대한민국</button>
+            <button class="filter" type="button" data-worldcup-filter="COMPLETED">종료</button>
+            <button class="filter" type="button" data-worldcup-filter="UPCOMING">예정</button>
+          </div>
+        </div>
+
+        <div id="worldCupEmpty" class="empty-state squad-empty" hidden>표시할 월드컵 경기가 없습니다.</div>
+        <div id="worldCupGrid" class="worldcup-grid" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1974,6 +1974,195 @@ textarea {
   color: var(--blue);
 }
 
+.worldcup-page {
+  width: min(1220px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0 56px;
+}
+
+.worldcup-heading h1 {
+  letter-spacing: 0;
+}
+
+.worldcup-stats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.worldcup-toolbar {
+  align-items: flex-start;
+}
+
+.worldcup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.worldcup-card {
+  display: grid;
+  min-height: 252px;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #cfdceb;
+  border-top: 4px solid #60a5fa;
+  border-radius: 8px;
+  box-shadow: var(--soft-shadow);
+}
+
+.worldcup-card.status-in {
+  border-top-color: #22c55e;
+}
+
+.worldcup-card.status-post {
+  border-top-color: #d9a441;
+}
+
+.worldcup-card header,
+.worldcup-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px;
+}
+
+.worldcup-card header {
+  border-bottom: 1px solid #e3ebf4;
+}
+
+.worldcup-card header span {
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.worldcup-card header time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.worldcup-scoreline {
+  display: grid;
+  gap: 10px;
+  padding: 16px 14px;
+}
+
+.worldcup-team {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.worldcup-logo {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  background: #f4f8fc;
+  border: 1px solid #dce7f3;
+  border-radius: 8px;
+  padding: 5px;
+}
+
+.worldcup-logo.placeholder {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--navy);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.worldcup-team strong,
+.worldcup-team small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worldcup-team strong {
+  color: var(--navy);
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.worldcup-team small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.worldcup-team b {
+  color: var(--navy);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.worldcup-team.is-winner strong,
+.worldcup-team.is-winner b {
+  color: #126347;
+}
+
+.worldcup-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 0 10px;
+  background: #f6f9fd;
+  border: 1px solid #e3ebf4;
+  border-radius: 8px;
+}
+
+.worldcup-score strong {
+  color: var(--navy);
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.worldcup-score span {
+  color: #41506a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.worldcup-card footer {
+  align-items: flex-end;
+  border-top: 1px solid #e3ebf4;
+}
+
+.worldcup-card footer span,
+.worldcup-card footer small {
+  display: block;
+  min-width: 0;
+  color: #31425f;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.worldcup-card footer small {
+  color: var(--muted);
+}
+
+.worldcup-card footer a {
+  flex: 0 0 auto;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.worldcup-card footer a:hover {
+  color: var(--blue);
+}
+
 @media (max-width: 920px) {
   .hero,
   .split-section,
@@ -1991,7 +2180,8 @@ textarea {
 
   .article-grid,
   .market-grid,
-  .live-grid {
+  .live-grid,
+  .worldcup-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2062,7 +2252,8 @@ textarea {
 
   .article-grid,
   .market-grid,
-  .live-grid {
+  .live-grid,
+  .worldcup-grid {
     grid-template-columns: 1fr;
   }
 
