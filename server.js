@@ -100,7 +100,7 @@ const trustedReporterGroups = [
   ["Paul Joyce", "폴 조이스"],
   ["James Pearce", "제임스 피어스"],
   ["Jason Burt", "제이슨 버트"],
-  ["Paul O'Keefe", "Paul O’Keefe", "PO", "피오", "O'Keefe", "O’Keefe", "pokeefe"],
+  ["Paul O'Keefe", "Paul O’Keefe", "Paul O Keefe", "Paul Okeefe", "P O'Keefe", "P O’Keefe", "PO", "피오", "폴 오키프", "오키프", "O'Keefe", "O’Keefe", "O Keefe", "pokeefe", "pokeefe1", "@pokeefe1"],
   ["Charlie Eccleshare", "찰리 에클셰어", "Eccleshare"],
   ["Simon Stone", "사이먼 스톤"],
   ["Ben Jacobs", "벤 제이콥스"],
