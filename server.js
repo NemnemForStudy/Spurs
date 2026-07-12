@@ -229,6 +229,12 @@ const trustedReporters = [...trustedReporterGroups, ...expandedReporterGroups].m
   aliases,
 }));
 
+function displayReporterLabel(reporter) {
+  if (!reporter) return null;
+  if (reporter.canonical === "PO") return "PO";
+  return reporter.aliases[1] || reporter.canonical;
+}
+
 const allowedForeignNewsSources = [
   "BBC",
   "BBC Sport",
@@ -2927,7 +2933,7 @@ function filterTrustedReporterItems(items) {
       ? {
           ...item,
           reporter: reporter.canonical,
-          reporterLabel: reporter.aliases[1] || reporter.canonical,
+          reporterLabel: displayReporterLabel(reporter),
           reporterMatchedBy: "headline-source-summary",
         }
       : item;
@@ -3181,7 +3187,7 @@ async function fetchXTransferItems() {
         url: tweet.url,
         publishedAt: tweet.createdAt,
         reporter: reporter?.canonical || tweet.account || null,
-        reporterLabel: reporter?.aliases?.[1] || reporter?.canonical || tweet.account || null,
+        reporterLabel: displayReporterLabel(reporter) || tweet.account || null,
         reporterMatchedBy: reporter ? "x-account-text" : "x-account",
         score: 88,
       };
@@ -3210,7 +3216,7 @@ function parseGoogleNews(xml, label, reporter = null) {
         url,
         publishedAt: publishedAt ? new Date(publishedAt).toISOString() : null,
         reporter: reporter?.canonical || null,
-        reporterLabel: reporter?.aliases?.[1] || reporter?.canonical || null,
+        reporterLabel: displayReporterLabel(reporter),
         reporterMatchedBy: reporter ? "news-search" : null,
         score: 70,
       };
