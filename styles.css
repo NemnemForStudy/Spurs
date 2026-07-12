@@ -390,6 +390,147 @@ textarea {
   line-height: 1.55;
 }
 
+.today-brief ul {
+  display: grid;
+  gap: 9px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.today-brief li {
+  position: relative;
+  padding-left: 18px;
+  color: #1f2d44;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.today-brief li::before {
+  content: "";
+  position: absolute;
+  top: 0.64em;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  background: var(--gold);
+  border-radius: 999px;
+}
+
+.cafe-hot-section {
+  display: grid;
+  gap: 14px;
+  padding: 22px clamp(18px, 4vw, 48px) 28px;
+  background: #eef4fb;
+  border-top: 1px solid #d7e3f0;
+}
+
+.cafe-hot-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cafe-hot-heading h2 {
+  margin: 0;
+  color: var(--navy);
+  font-size: clamp(24px, 3vw, 38px);
+  line-height: 1.05;
+}
+
+.cafe-hot-heading a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  color: #fff;
+  background: #03a84e;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.cafe-hot-heading a:hover {
+  background: #028540;
+}
+
+.cafe-hot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cafe-hot-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 10px;
+  min-height: 178px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #d4dfeb;
+  border-radius: 8px;
+  box-shadow: var(--soft-shadow);
+}
+
+.cafe-hot-card.is-read {
+  opacity: 0.62;
+}
+
+.cafe-hot-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cafe-hot-card header span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  color: #027a3b;
+  background: #e2f8eb;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.cafe-hot-card time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.cafe-hot-card strong {
+  color: var(--navy);
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1.35;
+}
+
+.cafe-hot-card p {
+  margin: 0;
+  color: #43546a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.cafe-hot-card a {
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.cafe-hot-card a::after {
+  content: "↗";
+  margin-left: 6px;
+  font-size: 11px;
+}
+
 .ticker {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -426,6 +567,29 @@ textarea {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
   font-size: 13px;
+}
+
+.site-version {
+  position: fixed;
+  right: 14px;
+  bottom: 12px;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  color: #31425f;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #d7e3f0;
+  border-radius: 999px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.12);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.site-version:hover {
+  color: var(--navy);
+  background: #fff;
 }
 
 .workspace,
@@ -631,6 +795,14 @@ textarea {
   transform: translateY(-1px);
 }
 
+.live-card.is-read {
+  opacity: 0.62;
+}
+
+.live-card.is-read h3 {
+  color: #41506a;
+}
+
 .live-card.setup {
   border-style: dashed;
 }
@@ -732,6 +904,23 @@ textarea {
 
 .live-links a:hover {
   color: var(--blue);
+}
+
+.live-links .mark-read {
+  width: 32px;
+  min-height: 32px;
+  color: #41506a;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 950;
+}
+
+.live-links .mark-read:hover {
+  color: #fff;
+  background: var(--blue);
+  border-color: var(--blue);
 }
 
 .pager {
@@ -2158,6 +2347,22 @@ textarea {
   font-weight: 750;
 }
 
+.worldcup-spurs {
+  display: inline-flex;
+  max-width: 100%;
+  margin-top: 5px;
+  padding: 3px 7px;
+  overflow: hidden;
+  color: #735015;
+  background: #fff0c7;
+  border-radius: 999px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .worldcup-team b {
   color: var(--navy);
   font-size: 20px;
@@ -2240,6 +2445,7 @@ textarea {
   .article-grid,
   .market-grid,
   .live-grid,
+  .cafe-hot-grid,
   .worldcup-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2300,6 +2506,7 @@ textarea {
   }
 
   .section-heading,
+  .cafe-hot-heading,
   .tools {
     align-items: flex-start;
     flex-direction: column;
@@ -2312,6 +2519,7 @@ textarea {
   .article-grid,
   .market-grid,
   .live-grid,
+  .cafe-hot-grid,
   .worldcup-grid {
     grid-template-columns: 1fr;
   }

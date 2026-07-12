@@ -1,6 +1,7 @@
 const http = require("node:http");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const childProcess = require("node:child_process");
 
 const root = __dirname;
 const isProduction = process.env.NODE_ENV === "production";
@@ -16,6 +17,42 @@ const disableTransfermarktLive = process.env.DISABLE_TRANSFERMARKT_LIVE === "1";
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${displayHost}:${port}`;
 const crawlerUserAgent =
   `Mozilla/5.0 (compatible; SpursPulse/1.0; Tottenham fan dashboard; +${publicBaseUrl})`;
+
+function readGitValue(command) {
+  try {
+    return childProcess.execSync(command, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1200,
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function buildInfo() {
+  const commit =
+    process.env.RENDER_GIT_COMMIT ||
+    process.env.COMMIT_SHA ||
+    process.env.SOURCE_VERSION ||
+    readGitValue("git rev-parse HEAD");
+  const branch =
+    process.env.RENDER_GIT_BRANCH ||
+    process.env.BRANCH ||
+    readGitValue("git rev-parse --abbrev-ref HEAD");
+
+  return {
+    mode: "version",
+    name: "Spurs Pulse",
+    environment: isProduction ? "production" : "local",
+    service: process.env.RENDER_SERVICE_NAME || "",
+    branch,
+    commit,
+    shortCommit: commit ? commit.slice(0, 7) : "unknown",
+    checkedAt: new Date().toISOString(),
+  };
+}
 
 const xAccounts = [
   { username: "SpursOfficial", label: "Spurs Official" },
@@ -226,6 +263,11 @@ const injuryFeedCache = new Map();
 const resultFeedCache = new Map();
 
 let worldCupFeedCache = {
+  expiresAt: 0,
+  payload: null,
+};
+
+let cafeHotFeedCache = {
   expiresAt: 0,
   payload: null,
 };
@@ -1626,6 +1668,57 @@ function normalizeWorldCupEvent(event = {}) {
   };
 }
 
+function worldCupCountryForNationality(nationality = "") {
+  const aliases = {
+    "Korea, South": "South Korea",
+    Korea: "South Korea",
+    "Republic of Ireland": "Ireland",
+    USA: "United States",
+    "United States of America": "United States",
+    "Cote d'Ivoire": "Ivory Coast",
+    "Côte d’Ivoire": "Ivory Coast",
+    Turkiye: "Türkiye",
+    Turkey: "Türkiye",
+    Czech: "Czechia",
+    "Czech Republic": "Czechia",
+  };
+  return aliases[nationality] || nationality;
+}
+
+function attachSpursPlayersToWorldCupItems(items = [], players = []) {
+  const byCountry = new Map();
+  players.forEach((player) => {
+    const country = worldCupCountryForNationality(player.nationality || "");
+    if (!country) return;
+    const entry = {
+      id: player.id,
+      name: player.name,
+      nameKo: player.nameKo || player.name,
+      position: player.position,
+      number: player.number,
+      nationality: country,
+    };
+    byCountry.set(country, [...(byCountry.get(country) || []), entry]);
+  });
+
+  return items.map((item) => {
+    const homePlayers = byCountry.get(item.home?.name) || [];
+    const awayPlayers = byCountry.get(item.away?.name) || [];
+    return {
+      ...item,
+      hasSpursPlayers: Boolean(homePlayers.length || awayPlayers.length),
+      home: {
+        ...item.home,
+        spursPlayers: homePlayers,
+      },
+      away: {
+        ...item.away,
+        spursPlayers: awayPlayers,
+      },
+    };
+  });
+}
+
 function sortWorldCupItems(items = []) {
   return [...items].sort((a, b) => String(a.sortKey || "").localeCompare(String(b.sortKey || "")));
 }
@@ -1654,6 +1747,7 @@ function summarizeWorldCup(items = []) {
     scheduled: items.filter((item) => item.status === "pre").length,
     today: items.filter((item) => item.date && dateKey(item.date) === todayKey).length,
     korea: items.filter((item) => [item.home?.name, item.away?.name].includes("South Korea")).length,
+    spurs: items.filter((item) => item.hasSpursPlayers).length,
   };
 }
 
@@ -1674,6 +1768,8 @@ async function getWorldCupFeed() {
     });
     const data = JSON.parse(raw);
     items = sortWorldCupItems((data.events || []).map(normalizeWorldCupEvent).filter((item) => item.id));
+    const squad = await getSquadFeed();
+    items = attachSpursPlayersToWorldCupItems(items, squad.items || []);
   } catch {
     dataSource = "unavailable";
     items = [];
@@ -2363,6 +2459,69 @@ async function fetchNaverCafe() {
   return settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 }
 
+function cafeHeatScore(item) {
+  const stats = item.stats || {};
+  const publishedAt = item.publishedAt ? new Date(item.publishedAt).getTime() : 0;
+  const ageHours = publishedAt ? Math.max(0, (Date.now() - publishedAt) / 36e5) : 72;
+  const recency = Math.max(0, 48 - ageHours) * 0.35;
+  const likes = Number(stats.likes || 0);
+  const comments = Number(stats.comments || 0);
+  const views = Number(stats.views || 0);
+  return likes * 5 + comments * 2.4 + Math.log10(views + 1) * 4 + recency;
+}
+
+async function getCafeHotFeed() {
+  if (cafeHotFeedCache.payload && Date.now() < cafeHotFeedCache.expiresAt) {
+    return cafeHotFeedCache.payload;
+  }
+
+  let rawItems = [];
+  let dataSource = "naver-cafe";
+  try {
+    rawItems = await fetchNaverCafe();
+  } catch {
+    dataSource = "unavailable";
+    rawItems = [];
+  }
+
+  const items = rawItems
+    .map((item) => ({
+      ...item,
+      heat: cafeHeatScore(item),
+    }))
+    .sort((a, b) => b.heat - a.heat || new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0))
+    .slice(0, 8)
+    .map((item) =>
+      sanitizeFeedItem({
+        ...item,
+        source: item.sourceKey || item.source,
+        summary: item.summary || `${item.section || "카페"} 게시판에서 반응이 올라오는 글입니다.`,
+        heatLabel: item.heat >= 28 ? "HOT" : "Cafe",
+      }),
+    )
+    .filter((item) => item.title && item.url);
+
+  cafeHotFeedCache = {
+    expiresAt: Date.now() + communityCacheTtlMs,
+    payload: {
+      mode: "cafe-hot",
+      refreshedAt: new Date().toISOString(),
+      source: {
+        label: "스퍼스 코리아 카페",
+        url: naverCafeConfig.homeUrl,
+        dataSource,
+      },
+      filter: {
+        rawCount: rawItems.length,
+        shownCount: items.length,
+      },
+      items,
+    },
+  };
+
+  return cafeHotFeedCache.payload;
+}
+
 async function safeSource(name, fetcher) {
   try {
     return { name, items: await fetcher(), error: null };
@@ -2567,6 +2726,10 @@ const server = http.createServer(async (request, response) => {
       sendHealth(request, response);
       return;
     }
+    if (url.pathname === "/api/version") {
+      sendJson(response, 200, buildInfo());
+      return;
+    }
     if (url.pathname === "/api/image") {
       await sendProxiedImage(request, response, url.searchParams.get("url") || "");
       return;
@@ -2610,6 +2773,10 @@ const server = http.createServer(async (request, response) => {
     }
     if (url.pathname === "/api/world-cup") {
       sendJson(response, 200, await getWorldCupFeed());
+      return;
+    }
+    if (url.pathname === "/api/cafe-hot") {
+      sendJson(response, 200, await getCafeHotFeed());
       return;
     }
     await serveStatic(request, response);

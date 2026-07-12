@@ -94,7 +94,7 @@ const feeds = {
 };
 
 const clientCacheTtlMs = 90_000;
-const feedCacheVersion = "spurs-pulse-feed-v14";
+const feedCacheVersion = "spurs-pulse-feed-v15";
 const warmingEndpoints = new Set();
 
 const warmableEndpoints = [
@@ -105,6 +105,7 @@ const warmableEndpoints = [
   "/api/injuries",
   "/api/results",
   "/api/world-cup",
+  "/api/cafe-hot",
 ];
 
 const navEndpointByPage = {
@@ -163,6 +164,11 @@ const worldCupElements = {
   filters: document.querySelector("#worldCupFilters"),
   grid: document.querySelector("#worldCupGrid"),
   empty: document.querySelector("#worldCupEmpty"),
+};
+
+const homeElements = {
+  todayBrief: document.querySelector("#todayBriefList"),
+  cafeHotGrid: document.querySelector("#cafeHotGrid"),
 };
 
 const depthSlots = [
@@ -289,6 +295,45 @@ function writeCachedPayload(endpoint, payload) {
   }
 }
 
+const readArticlesStorageKey = "spurs-pulse-read-v1";
+
+function loadReadArticleIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(readArticlesStorageKey) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+const readArticleIds = loadReadArticleIds();
+
+function articleReadId(value = "") {
+  return safeHttpUrl(value) || String(value || "");
+}
+
+function isArticleRead(value = "") {
+  const id = articleReadId(value);
+  return Boolean(id && readArticleIds.has(id));
+}
+
+function markArticleRead(value = "") {
+  const id = articleReadId(value);
+  if (!id) return;
+  readArticleIds.add(id);
+  try {
+    localStorage.setItem(readArticlesStorageKey, JSON.stringify([...readArticleIds].slice(-500)));
+  } catch {
+    // Read state is a convenience only.
+  }
+}
+
+function markRenderedArticleRead(id = "") {
+  markArticleRead(id);
+  if (!id) return;
+  const selectorValue = window.CSS?.escape ? CSS.escape(id) : id.replace(/"/g, '\\"');
+  document.querySelectorAll(`[data-read-id="${selectorValue}"]`).forEach((card) => card.classList.add("is-read"));
+}
+
 async function warmEndpoint(endpoint) {
   if (!endpoint || readCachedPayload(endpoint) || warmingEndpoints.has(endpoint)) return;
   warmingEndpoints.add(endpoint);
@@ -380,8 +425,10 @@ function renderFeed(name) {
       const summary = cleanDisplayText(item.summary || "");
       const label = cleanDisplayText(item.reporterLabel || item.reporter || "");
       const href = safeHttpUrl(item.url);
+      const readId = articleReadId(href || item.id);
+      const isRead = isArticleRead(readId);
       return `
-        <article class="live-card${summary ? "" : " no-summary"}">
+        <article class="live-card${summary ? "" : " no-summary"}${isRead ? " is-read" : ""}" data-read-id="${escapeHtml(readId)}">
           <header>
             <div class="live-source">
               <strong>${escapeHtml(source)}</strong>
@@ -392,7 +439,8 @@ function renderFeed(name) {
           <h3>${escapeHtml(title)}</h3>
           ${summary ? `<p data-full-summary="${escapeHtml(summary)}">${escapeHtml(summary)}</p>` : ""}
           <div class="live-links">
-            ${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">원문 보기</a>` : ""}
+            ${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-read-link="${escapeHtml(readId)}">원문 보기</a>` : ""}
+            ${readId ? `<button class="mark-read" type="button" data-mark-read="${escapeHtml(readId)}" title="읽음 표시" aria-label="읽음 표시">✓</button>` : ""}
           </div>
         </article>
       `;
@@ -445,6 +493,45 @@ async function refreshFeed(name) {
       config.status.textContent = feedStatusText(state.payload);
     }
     renderFeed(name);
+  }
+}
+
+function renderVersionBadge(info = {}) {
+  const commit = info.shortCommit || "unknown";
+  const env = info.environment === "production" ? "deploy" : "local";
+  const href = info.commit ? `https://github.com/NemnemForStudy/Spurs/commit/${encodeURIComponent(info.commit)}` : "";
+  let badge = document.querySelector("#siteVersion");
+  if (!badge) {
+    badge = document.createElement(href ? "a" : "span");
+    badge.id = "siteVersion";
+    badge.className = "site-version";
+    document.body.appendChild(badge);
+  }
+
+  if (href && badge.tagName !== "A") {
+    const link = document.createElement("a");
+    link.id = "siteVersion";
+    link.className = "site-version";
+    badge.replaceWith(link);
+    badge = link;
+  }
+
+  badge.textContent = `${env} · ${commit}`;
+  badge.title = `${info.name || "Spurs Pulse"} ${info.branch || ""} ${info.commit || ""}`.trim();
+  if (href) {
+    badge.href = href;
+    badge.target = "_blank";
+    badge.rel = "noopener noreferrer";
+  }
+}
+
+async function refreshVersionBadge() {
+  try {
+    const response = await fetch("/api/version", { cache: "no-store" });
+    if (!response.ok) throw new Error("version unavailable");
+    renderVersionBadge(await response.json());
+  } catch {
+    renderVersionBadge({ environment: "local", shortCommit: "unknown" });
   }
 }
 
@@ -1189,9 +1276,9 @@ function renderWorldCupStats(payload) {
     ["전체 경기", filter.shownCount ?? 0],
     ["오늘", filter.today ?? 0],
     ["라이브", filter.live ?? 0],
-    ["종료", filter.completed ?? 0],
-    ["예정", filter.scheduled ?? 0],
+    ["토트넘 선수", filter.spurs ?? 0],
     ["대한민국", filter.korea ?? 0],
+    ["종료", filter.completed ?? 0],
   ];
 
   worldCupElements.stats.innerHTML = stats
@@ -1247,6 +1334,7 @@ function worldCupScoreText(item) {
 function worldCupTeamMarkup(team = {}, side = "", showScore = true) {
   const logoUrl = proxiedImageUrl(team.logoUrl);
   const nameKo = team.nameKo || team.name || "-";
+  const spursPlayers = (team.spursPlayers || []).map((player) => player.nameKo || player.name).filter(Boolean);
   return `
     <div class="worldcup-team ${team.winner ? "is-winner" : ""}">
       ${
@@ -1257,6 +1345,7 @@ function worldCupTeamMarkup(team = {}, side = "", showScore = true) {
       <span>
         <strong>${escapeHtml(nameKo)}</strong>
         ${team.name && team.name !== nameKo ? `<small>${escapeHtml(team.abbreviation ? `${team.abbreviation} · ${team.name}` : team.name)}</small>` : ""}
+        ${spursPlayers.length ? `<em class="worldcup-spurs">TH · ${escapeHtml(spursPlayers.slice(0, 3).join(", "))}</em>` : ""}
       </span>
       ${showScore && team.score !== "" && team.score !== undefined ? `<b>${escapeHtml(team.score)}</b>` : ""}
     </div>
@@ -1271,6 +1360,7 @@ function filteredWorldCupItems() {
       worldCupState.filter === "ALL" ||
       (worldCupState.filter === "TODAY" && isWorldCupToday(item)) ||
       (worldCupState.filter === "LIVE" && item.status === "in") ||
+      (worldCupState.filter === "SPURS" && item.hasSpursPlayers) ||
       (worldCupState.filter === "KOREA" && teamNames.includes("South Korea")) ||
       (worldCupState.filter === "COMPLETED" && item.completed) ||
       (worldCupState.filter === "UPCOMING" && !item.completed && item.status !== "in");
@@ -1288,6 +1378,8 @@ function filteredWorldCupItems() {
       item.home?.nameKo,
       item.away?.name,
       item.away?.nameKo,
+      item.home?.spursPlayers?.map((player) => `${player.nameKo || ""} ${player.name || ""}`).join(" "),
+      item.away?.spursPlayers?.map((player) => `${player.nameKo || ""} ${player.name || ""}`).join(" "),
       item.broadcasts?.join(" "),
     ]
       .join(" ")
@@ -1405,6 +1497,131 @@ async function refreshTicker() {
   }
 }
 
+async function fetchPayload(endpoint) {
+  const response = await fetch(endpoint, { cache: "no-store" });
+  if (!response.ok) throw new Error(`${endpoint} unavailable`);
+  const payload = await response.json();
+  writeCachedPayload(endpoint, payload);
+  return payload;
+}
+
+function renderTodayBriefLines(lines = []) {
+  if (!homeElements.todayBrief) return;
+  homeElements.todayBrief.innerHTML = lines
+    .slice(0, 3)
+    .map((line) => `<li>${escapeHtml(line)}</li>`)
+    .join("");
+}
+
+function worldCupBriefText(payload = {}) {
+  const items = payload.items || [];
+  const now = Date.now();
+  const sorted = [...items].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+  const upcoming = sorted.filter((item) => new Date(item.date || 0).getTime() >= now);
+  const completed = sorted.filter((item) => new Date(item.date || 0).getTime() < now).reverse();
+  const spursMatch =
+    sorted.find((item) => item.hasSpursPlayers && item.status === "in") ||
+    sorted.find((item) => item.hasSpursPlayers && isWorldCupToday(item)) ||
+    upcoming.find((item) => item.hasSpursPlayers) ||
+    completed.find((item) => item.hasSpursPlayers);
+  const todayMatch =
+    sorted.find((item) => item.status === "in") ||
+    sorted.find(isWorldCupToday) ||
+    upcoming[0] ||
+    completed[0];
+  const match = spursMatch || todayMatch;
+  if (!match) return "월드컵: 오늘 확인할 경기와 토트넘 선수 관련 일정을 정리 중입니다.";
+
+  const home = match.home?.nameKo || match.home?.name || "-";
+  const away = match.away?.nameKo || match.away?.name || "-";
+  const spursPlayers = [match.home?.spursPlayers || [], match.away?.spursPlayers || []]
+    .flat()
+    .map((player) => player.nameKo || player.name)
+    .filter(Boolean);
+  const playerText = spursPlayers.length ? ` · ${spursPlayers.slice(0, 3).join(", ")}` : "";
+  return `월드컵: ${home} vs ${away}${playerText}`;
+}
+
+async function refreshTodayBrief() {
+  if (!homeElements.todayBrief) return;
+
+  const lines = [
+    "국문 피드와 이적시장 흐름을 확인 중입니다.",
+    "이적시장 신뢰 소식을 확인 중입니다.",
+    "월드컵 일정과 토트넘 선수 관련 경기를 같이 묶어봅니다.",
+  ];
+  renderTodayBriefLines(lines);
+
+  const tasks = [
+    fetchPayload("/api/korean-feed").then((payload) => {
+      const item = payload.items?.[0];
+      if (item) {
+        lines[0] = `국문: ${cleanDisplayText(item.title)}`;
+        renderTodayBriefLines(lines);
+      }
+    }),
+    fetchPayload("/api/transfer-feed").then((payload) => {
+      const item = payload.items?.[0];
+      if (item) {
+        lines[1] = `이적: ${cleanDisplayText(item.title)}`;
+        renderTodayBriefLines(lines);
+      }
+    }),
+    fetchPayload("/api/world-cup").then((payload) => {
+      lines[2] = worldCupBriefText(payload);
+      renderTodayBriefLines(lines);
+    }),
+  ];
+
+  await Promise.allSettled(tasks);
+}
+
+function renderCafeHot(payload = {}) {
+  if (!homeElements.cafeHotGrid) return;
+  const items = (payload.items || []).slice(0, 4);
+  if (!items.length) {
+    homeElements.cafeHotGrid.innerHTML = `<div class="empty-state">카페 핫글을 아직 찾지 못했습니다.</div>`;
+    return;
+  }
+
+  homeElements.cafeHotGrid.innerHTML = items
+    .map((item) => {
+      const href = safeHttpUrl(item.url);
+      const readId = articleReadId(href || item.id);
+      const isRead = isArticleRead(readId);
+      const source = cleanDisplayText(item.source || "스퍼스 코리아 카페");
+      const title = cleanDisplayText(item.title || "");
+      const summary = cleanDisplayText(item.summary || "");
+      return `
+        <article class="cafe-hot-card${isRead ? " is-read" : ""}" data-read-id="${escapeHtml(readId)}">
+          <header>
+            <span>${escapeHtml(item.heatLabel || "Cafe")}</span>
+            <time>${formatDate(item.publishedAt)}</time>
+          </header>
+          <strong>${escapeHtml(title)}</strong>
+          <p>${escapeHtml(summary || source)}</p>
+          ${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-read-link="${escapeHtml(readId)}">카페에서 보기</a>` : ""}
+        </article>
+      `;
+    })
+    .join("");
+}
+
+async function refreshCafeHot() {
+  if (!homeElements.cafeHotGrid) return;
+  const cached = readCachedPayload("/api/cafe-hot");
+  if (cached) renderCafeHot(cached);
+
+  try {
+    const payload = await fetchPayload("/api/cafe-hot");
+    renderCafeHot(payload);
+  } catch {
+    if (!cached) {
+      homeElements.cafeHotGrid.innerHTML = `<div class="empty-state">카페 핫글을 불러오지 못했습니다.</div>`;
+    }
+  }
+}
+
 Object.entries(feeds).forEach(([name, config]) => {
   config.refresh?.addEventListener("click", () => refreshFeed(name));
   config.prev?.addEventListener("click", () => {
@@ -1418,6 +1635,20 @@ Object.entries(feeds).forEach(([name, config]) => {
     feedState[name].page += 1;
     renderFeed(name);
   });
+});
+
+document.addEventListener("click", (event) => {
+  const readButton = event.target.closest("[data-mark-read]");
+  if (readButton) {
+    event.preventDefault();
+    markRenderedArticleRead(readButton.dataset.markRead || "");
+    return;
+  }
+
+  const readLink = event.target.closest("[data-read-link]");
+  if (readLink) {
+    markRenderedArticleRead(readLink.dataset.readLink || "");
+  }
 });
 
 squadElements.refresh?.addEventListener("click", refreshSquad);
@@ -1520,8 +1751,11 @@ window.addEventListener("resize", () => {
 });
 
 markActiveNav();
+refreshVersionBadge();
 renderTicker();
 refreshTicker();
+refreshTodayBrief();
+refreshCafeHot();
 refreshFeed("korean");
 refreshFeed("english");
 refreshFeed("transfer");
@@ -1536,4 +1770,6 @@ window.setInterval(() => {
   refreshFeed("transfer");
   refreshResults();
   refreshWorldCup();
+  refreshTodayBrief();
+  refreshCafeHot();
 }, 60_000);
