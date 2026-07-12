@@ -65,6 +65,7 @@ const communityState = {
   board: "all",
   items: [],
   selectedId: "",
+  selectedPost: null,
   payload: null,
   ownerToken: "",
   ownedTargets: new Set(),
@@ -1824,6 +1825,8 @@ function renderCommunityPosts() {
 
 function renderCommunityDetail(post = null) {
   if (!communityElements.detail) return;
+  communityState.selectedPost = post;
+  syncCommunityCommentAuthor(post);
   if (!post) {
     communityElements.detail.innerHTML = `<div class="empty-state">게시글을 선택하면 댓글까지 볼 수 있습니다.</div>`;
     if (communityElements.commentForm) communityElements.commentForm.hidden = true;
@@ -1864,6 +1867,18 @@ function renderCommunityDetail(post = null) {
     </section>
   `;
   if (communityElements.commentForm) communityElements.commentForm.hidden = false;
+}
+
+function syncCommunityCommentAuthor(post = null) {
+  if (!communityElements.commentAuthor) return;
+  const locked = Boolean(post?.ownedByMe);
+  communityElements.commentAuthor.disabled = locked;
+  if (locked) {
+    communityElements.commentAuthor.value = post.author || "익명";
+    communityElements.commentAuthor.title = "내 글에는 원글 닉네임으로 댓글이 고정됩니다.";
+  } else {
+    communityElements.commentAuthor.title = "";
+  }
 }
 
 function openCommunityReport(targetType, targetId) {
@@ -2237,7 +2252,7 @@ communityElements.commentForm?.addEventListener("submit", async (event) => {
     const payload = await postJson("/api/community-comments", {
       teamId: communityState.teamId,
       postId: communityState.selectedId,
-      author: communityElements.commentAuthor?.value || "",
+      author: communityState.selectedPost?.ownedByMe ? communityState.selectedPost.author || "" : communityElements.commentAuthor?.value || "",
       body: communityElements.commentBody?.value || "",
       ownerToken: communityState.ownerToken,
     });

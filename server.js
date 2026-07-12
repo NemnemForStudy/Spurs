@@ -1977,13 +1977,15 @@ async function createCommunityComment(request) {
   if (!post) return { status: 404, payload: { message: "게시글을 찾지 못했습니다." } };
 
   const now = communityNow();
+  const ownerKey = communityOwnerKey(body.ownerToken);
+  const isPostOwner = Boolean(ownerKey && post.ownerKey && ownerKey === post.ownerKey);
   const comment = {
     id: crypto.randomUUID(),
     postId,
-    author: normalizeCommunityAuthor(body.author),
+    author: isPostOwner ? normalizeCommunityAuthor(post.author) : normalizeCommunityAuthor(body.author),
     body: commentBody,
     hidden: false,
-    ownerKey: communityOwnerKey(body.ownerToken),
+    ownerKey,
     createdAt: now,
   };
 
