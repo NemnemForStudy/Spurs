@@ -4,8 +4,16 @@
   "private": true,
   "description": "Tottenham Hotspur fan news page with local API support.",
   "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js",
-    "check": "node --check server.js && node --check app.js"
+    "dev": "next dev -p 4173",
+    "build": "next build",
+    "start": "next start -p 4173",
+    "serve:legacy": "node server.js",
+    "check": "node --check server.js && node --check app.js && npm run build"
+  },
+  "dependencies": {
+    "next": "^16.2.10",
+    "postcss": "^8.5.17",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   }
 }

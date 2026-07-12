@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>커뮤니티 | Spurs Pulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/index.html" aria-label="Spurs Pulse 홈">
+        <span class="brand-mark">TH</span>
+        <span>
+          <strong>Spurs Pulse</strong>
+          <small>Football fan desk</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="주요 섹션">
+        <a href="/korean.html">국문 피드</a>
+        <a href="/english.html">영문 피드</a>
+        <a href="/market.html">이적 시장</a>
+        <a href="/teams.html">팀 허브</a>
+        <a href="/community.html?team=tottenham">커뮤니티</a>
+        <a href="/players.html">선수단</a>
+        <a href="/results.html">경기 결과</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="communityPage" class="community-page">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Fan community</p>
+            <h1 id="communityTeamName">토트넘 커뮤니티</h1>
+            <p id="communityTeamEnglish" class="page-lead">Tottenham Hotspur</p>
+          </div>
+          <div class="live-controls">
+            <span id="communityStatus">커뮤니티 확인 중</span>
+          </div>
+        </div>
+
+        <div id="communityBoards" class="filter-row community-board-row" aria-label="게시판 선택"></div>
+
+        <div class="community-layout">
+          <aside class="community-compose">
+            <form id="communityPostForm" class="community-form">
+              <div class="form-row">
+                <label>
+                  <span>게시판</span>
+                  <select id="communityPostBoard"></select>
+                </label>
+                <label>
+                  <span>닉네임</span>
+                  <input id="communityPostAuthor" type="text" maxlength="24" placeholder="익명" autocomplete="nickname" />
+                </label>
+              </div>
+              <label>
+                <span>제목</span>
+                <input id="communityPostTitle" type="text" maxlength="120" placeholder="무슨 이야기를 나눌까요?" required />
+              </label>
+              <label>
+                <span>내용</span>
+                <textarea id="communityPostBody" rows="7" maxlength="4000" placeholder="팬들과 나누고 싶은 이야기를 적어주세요." required></textarea>
+              </label>
+              <button class="primary-action" type="submit">게시글 올리기</button>
+            </form>
+          </aside>
+
+          <section class="community-list-panel" aria-label="게시글 목록">
+            <div id="communityPosts" class="community-post-list"></div>
+            <div id="communityEmpty" class="empty-state" hidden>아직 게시글이 없습니다.</div>
+          </section>
+
+          <section class="community-detail-panel" aria-label="게시글 상세">
+            <div id="communityDetail"></div>
+            <form id="communityCommentForm" class="community-form comment-form" hidden>
+              <div class="form-row">
+                <label>
+                  <span>닉네임</span>
+                  <input id="communityCommentAuthor" type="text" maxlength="24" placeholder="익명" autocomplete="nickname" />
+                </label>
+              </div>
+              <label>
+                <span>댓글</span>
+                <textarea id="communityCommentBody" rows="4" maxlength="1500" placeholder="댓글을 남겨보세요." required></textarea>
+              </label>
+              <button class="primary-action" type="submit">댓글 달기</button>
+            </form>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

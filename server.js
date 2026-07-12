@@ -2,8 +2,9 @@ const http = require("node:http");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const childProcess = require("node:child_process");
+const crypto = require("node:crypto");
 
-const root = __dirname;
+const root = process.cwd();
 const isProduction = process.env.NODE_ENV === "production";
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || (isProduction ? "0.0.0.0" : "127.0.0.1");
@@ -17,6 +18,9 @@ const disableTransfermarktLive = process.env.DISABLE_TRANSFERMARKT_LIVE === "1";
 const publicBaseUrl = process.env.PUBLIC_BASE_URL || `http://${displayHost}:${port}`;
 const crawlerUserAgent =
   `Mozilla/5.0 (compatible; SpursPulse/1.0; Tottenham fan dashboard; +${publicBaseUrl})`;
+const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+const communityStorageFile = path.join(root, "data", "community-store.json");
 
 function readGitValue(command) {
   try {
@@ -504,6 +508,9 @@ const allowedStaticFiles = new Set([
   "injuries.html",
   "results.html",
   "worldcup.html",
+  "teams.html",
+  "team.html",
+  "community.html",
   "styles.css",
   "app.js",
 ]);
@@ -1232,6 +1239,508 @@ async function readSeasonSnapshot(kind, seasonId) {
   } catch {
     return null;
   }
+}
+
+const fallbackTeams = [
+  {
+    id: "tottenham",
+    slug: "tottenham",
+    badge: "TH",
+    nameKo: "토트넘",
+    nameEn: "Tottenham Hotspur",
+    shortName: "Spurs",
+    status: "active",
+    color: "#0b1f43",
+    accent: "#d7a84b",
+    description: "Spurs Pulse의 첫 번째 팀 허브입니다. 토트넘 뉴스, 이적시장, 선수단, 경기 결과, 팬 게시판을 한 곳에 묶습니다.",
+    cafeUrl: "https://cafe.naver.com/spurskoreaspurs",
+    pages: [
+      { label: "국문 피드", href: "/korean.html" },
+      { label: "영문 피드", href: "/english.html" },
+      { label: "이적 시장", href: "/market.html" },
+      { label: "선수단", href: "/players.html" },
+      { label: "부상 이력", href: "/injuries.html" },
+      { label: "경기 결과", href: "/results.html" },
+      { label: "월드컵", href: "/worldcup.html" },
+      { label: "커뮤니티", href: "/community.html?team=tottenham" },
+    ],
+  },
+];
+
+const communityBoards = [
+  { id: "general", label: "자유", description: "가볍게 이야기하는 팬 게시판" },
+  { id: "match", label: "경기", description: "프리뷰, 리뷰, 라인업 이야기" },
+  { id: "transfer", label: "이적", description: "기자 소식과 루머 토론" },
+  { id: "question", label: "질문", description: "전술, 선수, 일정 질문" },
+];
+
+function normalizeTeamId(value = "") {
+  return String(value || "tottenham").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40) || "tottenham";
+}
+
+function normalizeCommunityBoard(value = "") {
+  const board = String(value || "general").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  return communityBoards.some((item) => item.id === board) ? board : "general";
+}
+
+function cleanSingleLine(value = "", maxLength = 120) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function cleanMultiline(value = "", maxLength = 4000) {
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{4,}/g, "\n\n\n")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeCommunityAuthor(value = "") {
+  return cleanSingleLine(value, 24) || "익명";
+}
+
+function communityNow() {
+  return new Date().toISOString();
+}
+
+function publicTeam(team = {}) {
+  const id = normalizeTeamId(team.id || team.slug);
+  return {
+    id,
+    slug: normalizeTeamId(team.slug || id),
+    badge: cleanSingleLine(team.badge || "FC", 4).toUpperCase(),
+    nameKo: cleanSingleLine(team.nameKo || team.name || "팀", 60),
+    nameEn: cleanSingleLine(team.nameEn || team.name || "Football Club", 80),
+    shortName: cleanSingleLine(team.shortName || team.nameKo || team.nameEn || id, 40),
+    status: team.status === "planned" ? "planned" : "active",
+    color: cleanSingleLine(team.color || "#0b1f43", 20),
+    accent: cleanSingleLine(team.accent || "#d7a84b", 20),
+    description: cleanMultiline(team.description || "", 500),
+    cafeUrl: cleanSingleLine(team.cafeUrl || "", 220),
+    href: `/teams/${id}`,
+    communityHref: `/community.html?team=${id}`,
+    pages: Array.isArray(team.pages) ? team.pages : [],
+  };
+}
+
+async function readTeamsConfig() {
+  try {
+    const raw = await fs.readFile(path.join(root, "data", "teams.json"), "utf8");
+    const parsed = JSON.parse(raw);
+    const teams = Array.isArray(parsed) ? parsed : parsed.items;
+    return teams.length ? teams.map(publicTeam) : fallbackTeams.map(publicTeam);
+  } catch {
+    return fallbackTeams.map(publicTeam);
+  }
+}
+
+async function getTeamsPayload() {
+  const teams = await readTeamsConfig();
+  return {
+    mode: "teams",
+    refreshedAt: new Date().toISOString(),
+    items: teams,
+    filter: {
+      shownCount: teams.length,
+      active: teams.filter((team) => team.status === "active").length,
+    },
+  };
+}
+
+async function getTeamPayload(teamId = "") {
+  const teams = await readTeamsConfig();
+  const id = normalizeTeamId(teamId);
+  const team = teams.find((item) => item.id === id || item.slug === id) || null;
+  if (!team) return null;
+  return {
+    mode: "team",
+    refreshedAt: new Date().toISOString(),
+    item: team,
+    boards: communityBoards,
+  };
+}
+
+function hasSupabaseCommunityStore() {
+  return Boolean(supabaseUrl && supabaseServiceKey);
+}
+
+function communityDataSource() {
+  return hasSupabaseCommunityStore() ? "supabase" : "local-file";
+}
+
+async function readJsonBody(request, maxBytes = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    request.on("data", (chunk) => {
+      raw += chunk;
+      if (Buffer.byteLength(raw, "utf8") > maxBytes) {
+        reject(new Error("Request body too large"));
+        request.destroy();
+      }
+    });
+    request.on("end", () => {
+      if (!raw.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        reject(new Error("Invalid JSON body"));
+      }
+    });
+    request.on("error", reject);
+  });
+}
+
+async function readLocalCommunityStore() {
+  try {
+    const raw = await fs.readFile(communityStorageFile, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      posts: Array.isArray(parsed.posts) ? parsed.posts : [],
+      comments: Array.isArray(parsed.comments) ? parsed.comments : [],
+      votes: Array.isArray(parsed.votes) ? parsed.votes : [],
+    };
+  } catch {
+    return { posts: [], comments: [], votes: [] };
+  }
+}
+
+let localCommunityWriteQueue = Promise.resolve();
+
+async function writeLocalCommunityStore(store) {
+  const write = async () => {
+    await fs.mkdir(path.dirname(communityStorageFile), { recursive: true });
+    await fs.writeFile(communityStorageFile, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  };
+  localCommunityWriteQueue = localCommunityWriteQueue.then(write, write);
+  await localCommunityWriteQueue;
+}
+
+function communityVoterKey(request, targetType, targetId) {
+  const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const remote = request.socket?.remoteAddress || "";
+  const userAgent = request.headers["user-agent"] || "";
+  return crypto
+    .createHash("sha256")
+    .update(`${forwarded || remote}|${userAgent}|${targetType}|${targetId}`)
+    .digest("hex");
+}
+
+function countVotes(votes = [], targetType, targetId) {
+  return votes
+    .filter((vote) => vote.targetType === targetType && vote.targetId === targetId)
+    .reduce((sum, vote) => sum + Number(vote.value || 1), 0);
+}
+
+function publicCommunityComment(comment = {}, votes = []) {
+  return {
+    id: comment.id,
+    postId: comment.postId,
+    author: comment.author || "익명",
+    body: comment.body || "",
+    createdAt: comment.createdAt || comment.created_at || communityNow(),
+    score: countVotes(votes, "comment", comment.id),
+  };
+}
+
+function publicCommunityPost(post = {}, comments = [], votes = [], includeComments = false) {
+  const postComments = comments
+    .filter((comment) => comment.postId === post.id && !comment.hidden)
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  return {
+    id: post.id,
+    teamId: post.teamId,
+    board: post.board || "general",
+    boardLabel: communityBoards.find((board) => board.id === post.board)?.label || "자유",
+    author: post.author || "익명",
+    title: post.title || "",
+    body: post.body || "",
+    createdAt: post.createdAt || communityNow(),
+    updatedAt: post.updatedAt || post.createdAt || communityNow(),
+    score: countVotes(votes, "post", post.id),
+    commentCount: postComments.length,
+    comments: includeComments ? postComments.map((comment) => publicCommunityComment(comment, votes)) : [],
+  };
+}
+
+function dbPostToCommunity(row = {}) {
+  return {
+    id: row.id,
+    teamId: row.team_id,
+    board: row.board,
+    author: row.author,
+    title: row.title,
+    body: row.body,
+    hidden: row.hidden,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function dbCommentToCommunity(row = {}) {
+  return {
+    id: row.id,
+    postId: row.post_id,
+    author: row.author,
+    body: row.body,
+    hidden: row.hidden,
+    createdAt: row.created_at,
+  };
+}
+
+function dbVoteToCommunity(row = {}) {
+  return {
+    targetType: row.target_type,
+    targetId: row.target_id,
+    value: Number(row.value || 1),
+  };
+}
+
+async function supabaseRequest(endpoint, options = {}) {
+  const response = await fetch(`${supabaseUrl}/rest/v1/${endpoint}`, {
+    ...options,
+    headers: {
+      apikey: supabaseServiceKey,
+      authorization: `Bearer ${supabaseServiceKey}`,
+      "content-type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase request failed: ${response.status} ${text}`);
+  }
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function readSupabaseCommunity({ teamId, board, postId }) {
+  const filters = [
+    "select=*",
+    "hidden=eq.false",
+    `team_id=eq.${encodeURIComponent(teamId)}`,
+    "order=created_at.desc",
+    "limit=120",
+  ];
+  if (board && board !== "all") filters.push(`board=eq.${encodeURIComponent(board)}`);
+  if (postId) filters.push(`id=eq.${encodeURIComponent(postId)}`);
+
+  const rows = await supabaseRequest(`community_posts?${filters.join("&")}`);
+  const posts = (rows || []).map(dbPostToCommunity);
+  const postIds = posts.map((post) => post.id);
+  if (!postIds.length) return { posts, comments: [], votes: [] };
+
+  const postIdFilter = postIds.map(encodeURIComponent).join(",");
+  const commentRows = await supabaseRequest(
+    `community_comments?select=*&hidden=eq.false&post_id=in.(${postIdFilter})&order=created_at.asc&limit=500`,
+  );
+  const comments = (commentRows || []).map(dbCommentToCommunity);
+
+  const postVotes = await supabaseRequest(
+    `community_votes?select=target_type,target_id,value&target_type=eq.post&target_id=in.(${postIdFilter})&limit=1000`,
+  );
+  let commentVotes = [];
+  const commentIds = comments.map((comment) => comment.id);
+  if (commentIds.length) {
+    commentVotes = await supabaseRequest(
+      `community_votes?select=target_type,target_id,value&target_type=eq.comment&target_id=in.(${commentIds.map(encodeURIComponent).join(",")})&limit=1000`,
+    );
+  }
+
+  return {
+    posts,
+    comments,
+    votes: [...(postVotes || []), ...(commentVotes || [])].map(dbVoteToCommunity),
+  };
+}
+
+async function readCommunityRows(options) {
+  if (hasSupabaseCommunityStore()) return readSupabaseCommunity(options);
+
+  const store = await readLocalCommunityStore();
+  const teamId = options.teamId;
+  const board = options.board || "all";
+  const postId = options.postId || "";
+  const posts = store.posts
+    .filter((post) => !post.hidden)
+    .filter((post) => post.teamId === teamId)
+    .filter((post) => !postId || post.id === postId)
+    .filter((post) => board === "all" || post.board === board)
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const postIds = new Set(posts.map((post) => post.id));
+  const comments = store.comments.filter((comment) => !comment.hidden && postIds.has(comment.postId));
+  const targetIds = new Set([...posts.map((post) => post.id), ...comments.map((comment) => comment.id)]);
+  const votes = store.votes.filter((vote) => targetIds.has(vote.targetId));
+  return { posts, comments, votes };
+}
+
+async function getCommunityPostsPayload({ teamId = "tottenham", board = "all", postId = "" } = {}) {
+  const team = await getTeamPayload(teamId);
+  if (!team) return null;
+  const normalizedBoard = board === "all" ? "all" : normalizeCommunityBoard(board);
+  const rows = await readCommunityRows({ teamId: team.item.id, board: normalizedBoard, postId });
+  const includeComments = Boolean(postId);
+  const items = rows.posts.map((post) => publicCommunityPost(post, rows.comments, rows.votes, includeComments));
+  return {
+    mode: "community-posts",
+    refreshedAt: new Date().toISOString(),
+    source: {
+      label: "Spurs Pulse Community",
+      dataSource: communityDataSource(),
+    },
+    team: team.item,
+    boards: communityBoards,
+    filter: {
+      board: normalizedBoard,
+      shownCount: items.length,
+      comments: rows.comments.length,
+    },
+    items,
+  };
+}
+
+async function createCommunityPost(request) {
+  const body = await readJsonBody(request);
+  const team = await getTeamPayload(body.teamId || body.team || "tottenham");
+  if (!team) return { status: 404, payload: { message: "팀을 찾지 못했습니다." } };
+
+  const title = cleanSingleLine(body.title, 120);
+  const postBody = cleanMultiline(body.body, 4000);
+  if (title.length < 2 || postBody.length < 2) {
+    return { status: 400, payload: { message: "제목과 내용을 입력해주세요." } };
+  }
+
+  const now = communityNow();
+  const post = {
+    id: crypto.randomUUID(),
+    teamId: team.item.id,
+    board: normalizeCommunityBoard(body.board),
+    author: normalizeCommunityAuthor(body.author),
+    title,
+    body: postBody,
+    hidden: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  if (hasSupabaseCommunityStore()) {
+    await supabaseRequest("community_posts", {
+      method: "POST",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({
+        id: post.id,
+        team_id: post.teamId,
+        board: post.board,
+        author: post.author,
+        title: post.title,
+        body: post.body,
+        hidden: false,
+        created_at: post.createdAt,
+        updated_at: post.updatedAt,
+      }),
+    });
+  } else {
+    const store = await readLocalCommunityStore();
+    store.posts.unshift(post);
+    await writeLocalCommunityStore(store);
+  }
+
+  const payload = await getCommunityPostsPayload({ teamId: post.teamId, postId: post.id });
+  return { status: 201, payload };
+}
+
+async function createCommunityComment(request) {
+  const body = await readJsonBody(request);
+  const postId = cleanSingleLine(body.postId, 80);
+  const commentBody = cleanMultiline(body.body, 1500);
+  if (!postId || commentBody.length < 1) {
+    return { status: 400, payload: { message: "댓글 내용을 입력해주세요." } };
+  }
+
+  const rows = await readCommunityRows({ teamId: normalizeTeamId(body.teamId || "tottenham"), board: "all", postId });
+  const post = rows.posts[0];
+  if (!post) return { status: 404, payload: { message: "게시글을 찾지 못했습니다." } };
+
+  const now = communityNow();
+  const comment = {
+    id: crypto.randomUUID(),
+    postId,
+    author: normalizeCommunityAuthor(body.author),
+    body: commentBody,
+    hidden: false,
+    createdAt: now,
+  };
+
+  if (hasSupabaseCommunityStore()) {
+    await supabaseRequest("community_comments", {
+      method: "POST",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({
+        id: comment.id,
+        post_id: comment.postId,
+        author: comment.author,
+        body: comment.body,
+        hidden: false,
+        created_at: comment.createdAt,
+      }),
+    });
+  } else {
+    const store = await readLocalCommunityStore();
+    store.comments.push(comment);
+    await writeLocalCommunityStore(store);
+  }
+
+  const payload = await getCommunityPostsPayload({ teamId: post.teamId, postId });
+  return { status: 201, payload };
+}
+
+async function createCommunityVote(request) {
+  const body = await readJsonBody(request);
+  const targetType = body.targetType === "comment" ? "comment" : "post";
+  const targetId = cleanSingleLine(body.targetId, 80);
+  if (!targetId) return { status: 400, payload: { message: "추천 대상을 찾지 못했습니다." } };
+
+  const voterKey = communityVoterKey(request, targetType, targetId);
+  if (hasSupabaseCommunityStore()) {
+    const existing = await supabaseRequest(
+      `community_votes?select=id&target_type=eq.${targetType}&target_id=eq.${encodeURIComponent(targetId)}&voter_key=eq.${voterKey}&limit=1`,
+    );
+    if (!existing?.length) {
+      await supabaseRequest("community_votes", {
+        method: "POST",
+        headers: { prefer: "return=minimal" },
+        body: JSON.stringify({
+          id: crypto.randomUUID(),
+          target_type: targetType,
+          target_id: targetId,
+          voter_key: voterKey,
+          value: 1,
+          created_at: communityNow(),
+        }),
+      });
+    }
+  } else {
+    const store = await readLocalCommunityStore();
+    const exists = store.votes.some(
+      (vote) => vote.targetType === targetType && vote.targetId === targetId && vote.voterKey === voterKey,
+    );
+    if (!exists) {
+      store.votes.push({
+        id: crypto.randomUUID(),
+        targetType,
+        targetId,
+        voterKey,
+        value: 1,
+        createdAt: communityNow(),
+      });
+      await writeLocalCommunityStore(store);
+    }
+  }
+
+  return { status: 200, payload: { mode: "community-vote", ok: true } };
 }
 
 async function getInjuryFeed(seasonId = "") {
@@ -2681,6 +3190,10 @@ function resolveStaticFile(urlPathname) {
   }
 
   if (pathname === "/") pathname = "/index.html";
+  if (pathname === "/teams") pathname = "/teams.html";
+  if (/^\/teams\/[a-z0-9-]+$/i.test(pathname)) pathname = "/team.html";
+  if (pathname === "/community") pathname = "/community.html";
+  if (/^\/community\/[a-z0-9-]+$/i.test(pathname)) pathname = "/community.html";
   if (!pathname.startsWith("/") || pathname.includes("\0") || pathname.includes("\\")) return null;
 
   const fileName = pathname.replace(/^\/+/, "");
@@ -2714,10 +3227,10 @@ async function serveStatic(request, response) {
   }
 }
 
-const server = http.createServer(async (request, response) => {
+async function handleRequest(request, response) {
   try {
-    if (!["GET", "HEAD"].includes(request.method)) {
-      sendText(response, 405, "Method not allowed", { allow: "GET, HEAD" });
+    if (!["GET", "HEAD", "POST"].includes(request.method)) {
+      sendText(response, 405, "Method not allowed", { allow: "GET, HEAD, POST" });
       return;
     }
 
@@ -2727,8 +3240,61 @@ const server = http.createServer(async (request, response) => {
     }
 
     const url = new URL(request.url, `http://${request.headers.host}`);
-    if (url.pathname === "/healthz") {
+    if (url.pathname === "/healthz" || url.pathname === "/api/healthz") {
       sendHealth(request, response);
+      return;
+    }
+    if (url.pathname === "/api/teams") {
+      sendJson(response, 200, await getTeamsPayload());
+      return;
+    }
+    if (url.pathname.startsWith("/api/teams/")) {
+      const payload = await getTeamPayload(url.pathname.split("/").pop() || "");
+      if (!payload) {
+        sendJson(response, 404, { mode: "not-found", message: "팀을 찾지 못했습니다.", items: [] });
+        return;
+      }
+      sendJson(response, 200, payload);
+      return;
+    }
+    if (url.pathname === "/api/community-posts") {
+      if (request.method === "POST") {
+        const result = await createCommunityPost(request);
+        sendJson(response, result.status, result.payload);
+        return;
+      }
+      const payload = await getCommunityPostsPayload({
+        teamId: url.searchParams.get("team") || "tottenham",
+        board: url.searchParams.get("board") || "all",
+        postId: url.searchParams.get("post") || "",
+      });
+      if (!payload) {
+        sendJson(response, 404, { mode: "not-found", message: "팀을 찾지 못했습니다.", items: [] });
+        return;
+      }
+      sendJson(response, 200, payload);
+      return;
+    }
+    if (url.pathname === "/api/community-comments") {
+      if (request.method !== "POST") {
+        sendText(response, 405, "Method not allowed", { allow: "POST" });
+        return;
+      }
+      const result = await createCommunityComment(request);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (url.pathname === "/api/community-votes") {
+      if (request.method !== "POST") {
+        sendText(response, 405, "Method not allowed", { allow: "POST" });
+        return;
+      }
+      const result = await createCommunityVote(request);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (!["GET", "HEAD"].includes(request.method)) {
+      sendText(response, 405, "Method not allowed", { allow: "GET, HEAD" });
       return;
     }
     if (url.pathname === "/api/version") {
@@ -2792,13 +3358,20 @@ const server = http.createServer(async (request, response) => {
       items: fallbackItems,
     });
   }
-});
+}
 
-server.listen(port, host, () => {
-  console.log(`Spurs Pulse running at http://${displayHost}:${port}`);
-  console.log(`Listening host: ${host}. Mode: ${isProduction ? "production" : "local"}.`);
-  console.log(`Free community crawler refresh: ${Math.round(communityCacheTtlMs / 1000)}s.`);
-  if (!bearerToken) {
-    console.log("Set X_BEARER_TOKEN to enable live X API ingestion.");
-  }
-});
+if (require.main === module) {
+  const server = http.createServer(handleRequest);
+  server.listen(port, host, () => {
+    console.log(`Spurs Pulse running at http://${displayHost}:${port}`);
+    console.log(`Listening host: ${host}. Mode: ${isProduction ? "production" : "local"}.`);
+    console.log(`Free community crawler refresh: ${Math.round(communityCacheTtlMs / 1000)}s.`);
+    if (!bearerToken) {
+      console.log("Set X_BEARER_TOKEN to enable live X API ingestion.");
+    }
+  });
+}
+
+module.exports = {
+  handleRequest,
+};

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>토트넘 허브 | Spurs Pulse</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/index.html" aria-label="Spurs Pulse 홈">
+        <span class="brand-mark">TH</span>
+        <span>
+          <strong>Spurs Pulse</strong>
+          <small>Football fan desk</small>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="주요 섹션">
+        <a href="/korean.html">국문 피드</a>
+        <a href="/english.html">영문 피드</a>
+        <a href="/market.html">이적 시장</a>
+        <a href="/teams.html">팀 허브</a>
+        <a href="/community.html?team=tottenham">커뮤니티</a>
+        <a href="/players.html">선수단</a>
+        <a href="/results.html">경기 결과</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="teamHub" class="team-hub-page">
+        <div class="team-hub-hero">
+          <div class="team-hub-copy">
+            <span id="teamHubBadge" class="team-hub-badge">TH</span>
+            <p class="eyebrow">Team hub</p>
+            <h1 id="teamHubName">토트넘</h1>
+            <p id="teamHubEnglish" class="team-hub-english">Tottenham Hotspur</p>
+            <p id="teamHubDescription">
+              토트넘 뉴스, 이적시장, 선수단, 경기 결과, 팬 게시판을 한 곳에 묶습니다.
+            </p>
+            <div class="hero-actions">
+              <a id="teamHubCommunityLink" class="icon-link primary" href="/community.html?team=tottenham">
+                <span aria-hidden="true">+</span>
+                <span>팬 게시판</span>
+              </a>
+              <a id="teamHubCafeLink" class="icon-link" href="https://cafe.naver.com/spurskoreaspurs" target="_blank" rel="noopener noreferrer">
+                <span aria-hidden="true">N</span>
+                <span>스퍼스 코리아</span>
+              </a>
+            </div>
+          </div>
+          <div id="teamHubStats" class="team-hub-stats" aria-label="팀 허브 요약"></div>
+        </div>
+
+        <section class="team-hub-panel">
+          <div>
+            <p class="eyebrow">Sections</p>
+            <h2>토트넘 메뉴</h2>
+          </div>
+          <div id="teamHubLinks" class="hub-link-grid"></div>
+        </section>
+
+        <section class="team-hub-panel">
+          <div>
+            <p class="eyebrow">Fan board</p>
+            <h2>최근 팬 게시글</h2>
+          </div>
+          <div id="teamHubCommunityPreview" class="hub-post-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
