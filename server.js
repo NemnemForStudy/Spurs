@@ -64,6 +64,9 @@ const xAccounts = [
   { username: "SpursOfficial", label: "Spurs Official" },
   { username: "FabrizioRomano", label: "Fabrizio Romano" },
   { username: "pokeefe1", label: "Paul O'Keefe" },
+  { username: "TheSpursWatch", label: "The Spurs Watch" },
+  { username: "TheSpursExpress", label: "The Spurs Express" },
+  { username: "HotspurRelated", label: "Hotspur Related" },
   { username: "LastWordOnSpurs", label: "Last Word On Spurs" },
   { username: "AlasdairGold", label: "Alasdair Gold" },
 ];
@@ -2828,6 +2831,7 @@ function isTransferNoise(item) {
 
 function hasTrustedReporterSignal(item) {
   if (!item.reporter) return false;
+  if (item.platform === "X" && item.reporterMatchedBy?.startsWith("x-")) return true;
   if (item.reporterMatchedBy === "news-search" && item.platform === "Google News") return true;
 
   const communityText = `${item.title || ""} ${item.summary || ""}`;
@@ -2840,8 +2844,9 @@ function hasTrustedReporterSignal(item) {
 
 function isReliableTransferItem(item) {
   if (!isTransferRelated(item)) return false;
-  if (isTransferNoise(item)) return false;
-  return hasTrustedReporterSignal(item);
+  const trusted = hasTrustedReporterSignal(item);
+  if (isTransferNoise(item) && !trusted) return false;
+  return trusted;
 }
 
 function filterTrustedReporterItems(items) {
@@ -2893,7 +2898,9 @@ function isAllowedForeignNews(item) {
 }
 
 function isTransferRelated(item) {
-  const haystack = normalizeForMatch(`${item.title || ""} ${item.summary || ""}`);
+  const haystack = normalizeForMatch(
+    `${item.section || ""} ${item.sourceKey || ""} ${item.source || ""} ${item.title || ""} ${item.summary || ""}`,
+  );
   return transferTerms.some((term) => {
     const normalizedTerm = normalizeForMatch(term);
     if (!normalizedTerm) return false;
@@ -3078,6 +3085,33 @@ async function getXFeed() {
   };
 
   return cache.payload;
+}
+
+async function fetchXTransferItems() {
+  if (!bearerToken) return [];
+  const feed = await getXFeed();
+  if (feed.mode !== "live") return [];
+
+  return (feed.items || [])
+    .map((tweet) => {
+      const reporter = findTrustedReporterInText(`${tweet.account || ""} ${tweet.username || ""} ${tweet.text || ""}`);
+      return {
+        id: `x-${tweet.id}`,
+        type: "social",
+        source: `X · ${tweet.account || tweet.username || "ITK"}`,
+        sourceKey: `X · @${tweet.username || ""}`,
+        platform: "X",
+        title: cleanArticleSummary(tweet.text || "", 180),
+        summary: cleanArticleSummary(tweet.text || "", 700),
+        url: tweet.url,
+        publishedAt: tweet.createdAt,
+        reporter: reporter?.canonical || tweet.account || null,
+        reporterLabel: reporter?.aliases?.[1] || reporter?.canonical || tweet.account || null,
+        reporterMatchedBy: reporter ? "x-account-text" : "x-account",
+        score: 88,
+      };
+    })
+    .filter((item) => item.title && item.url);
 }
 
 function parseGoogleNews(xml, label, reporter = null) {
@@ -3540,8 +3574,9 @@ async function getTransferFeed() {
   }
 
   const baseFeed = await getCommunityFeed();
+  const xSource = await safeSource("X", fetchXTransferItems);
   const transferItems = diversifyBySource(
-    baseFeed.items
+    [...baseFeed.items, ...xSource.items]
       .filter(isReliableTransferItem)
       .sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0)),
     12,
@@ -3566,8 +3601,18 @@ async function getTransferFeed() {
     payload: {
       ...baseFeed,
       mode: "transfer-feed",
+      sources: [
+        ...(baseFeed.sources || []),
+        {
+          name: xSource.name,
+          count: xSource.items.length,
+          ok: !xSource.error,
+          error: xSource.error,
+        },
+      ],
       filter: {
         ...baseFeed.filter,
+        xCount: xSource.items.length,
         shownCount: items.length,
       },
       items,
