@@ -60,17 +60,19 @@ const worldCupState = {
   requestId: 0,
 };
 
-const teamState = {
-  items: [],
-  current: null,
-};
-
 const communityState = {
   teamId: "tottenham",
   board: "all",
   items: [],
   selectedId: "",
   payload: null,
+};
+
+const analyticsState = {
+  startedAt: Date.now(),
+  lastEngagementSentAt: Date.now(),
+  visitorId: "",
+  sessionId: "",
 };
 
 const feeds = {
@@ -119,8 +121,8 @@ const warmableEndpoints = [
   "/api/results",
   "/api/world-cup",
   "/api/cafe-hot",
-  "/api/teams",
   "/api/community-posts?team=tottenham",
+  "/api/analytics-summary",
 ];
 
 const navEndpointByPage = {
@@ -131,8 +133,6 @@ const navEndpointByPage = {
   "injuries.html": "/api/injuries",
   "results.html": "/api/results",
   "worldcup.html": "/api/world-cup",
-  "teams.html": "/api/teams",
-  "team.html": "/api/teams/tottenham",
   "community.html": "/api/community-posts?team=tottenham",
 };
 
@@ -189,24 +189,6 @@ const homeElements = {
   cafeHotGrid: document.querySelector("#cafeHotGrid"),
 };
 
-const teamDirectoryElements = {
-  grid: document.querySelector("#teamDirectoryGrid"),
-  status: document.querySelector("#teamDirectoryStatus"),
-};
-
-const teamHubElements = {
-  root: document.querySelector("#teamHub"),
-  badge: document.querySelector("#teamHubBadge"),
-  name: document.querySelector("#teamHubName"),
-  english: document.querySelector("#teamHubEnglish"),
-  description: document.querySelector("#teamHubDescription"),
-  links: document.querySelector("#teamHubLinks"),
-  stats: document.querySelector("#teamHubStats"),
-  communityLink: document.querySelector("#teamHubCommunityLink"),
-  cafeLink: document.querySelector("#teamHubCafeLink"),
-  preview: document.querySelector("#teamHubCommunityPreview"),
-};
-
 const communityElements = {
   root: document.querySelector("#communityPage"),
   status: document.querySelector("#communityStatus"),
@@ -224,6 +206,7 @@ const communityElements = {
   commentForm: document.querySelector("#communityCommentForm"),
   commentAuthor: document.querySelector("#communityCommentAuthor"),
   commentBody: document.querySelector("#communityCommentBody"),
+  analytics: document.querySelector("#communityAnalytics"),
 };
 
 const depthSlots = [
@@ -428,7 +411,6 @@ function markActiveNav() {
     const active =
       linkPage === currentPage ||
       (currentPage === "player.html" && linkPage === "players.html") ||
-      (pathname.startsWith("/teams") && linkPage === "teams.html") ||
       (pathname.startsWith("/community") && linkPage === "community.html");
     link.classList.toggle("is-active", active);
   });
@@ -1584,6 +1566,113 @@ async function postJson(endpoint, body) {
   return payload;
 }
 
+function randomClientId(prefix = "id") {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${random}`;
+}
+
+function getStoredClientId(storage, key, prefix) {
+  try {
+    let value = storage.getItem(key);
+    if (!value) {
+      value = randomClientId(prefix);
+      storage.setItem(key, value);
+    }
+    return value;
+  } catch {
+    return randomClientId(prefix);
+  }
+}
+
+function initAnalyticsIdentity() {
+  analyticsState.visitorId = getStoredClientId(localStorage, "spurs-pulse-visitor-id", "visitor");
+  analyticsState.sessionId = getStoredClientId(sessionStorage, "spurs-pulse-session-id", "session");
+}
+
+function analyticsPayload(type, extra = {}) {
+  return {
+    type,
+    visitorId: analyticsState.visitorId,
+    sessionId: analyticsState.sessionId,
+    path: window.location.pathname,
+    title: document.title,
+    referrer: document.referrer,
+    ...extra,
+  };
+}
+
+function sendAnalytics(type, extra = {}, useBeacon = false) {
+  if (!analyticsState.visitorId || !analyticsState.sessionId) return;
+  const body = JSON.stringify(analyticsPayload(type, extra));
+  if (useBeacon && navigator.sendBeacon) {
+    const blob = new Blob([body], { type: "application/json" });
+    navigator.sendBeacon("/api/analytics-event", blob);
+    return;
+  }
+  fetch("/api/analytics-event", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body,
+    keepalive: useBeacon,
+  }).catch(() => {});
+}
+
+function sendEngagement(useBeacon = false) {
+  const now = Date.now();
+  const durationMs = Math.max(0, now - analyticsState.lastEngagementSentAt);
+  analyticsState.lastEngagementSentAt = now;
+  if (durationMs < 1000) return;
+  sendAnalytics("engagement", { durationMs }, useBeacon);
+}
+
+function formatMetricNumber(value = 0) {
+  return new Intl.NumberFormat("ko-KR").format(Number(value || 0));
+}
+
+function formatDuration(seconds = 0) {
+  const value = Number(seconds || 0);
+  if (value < 60) return `${Math.round(value)}초`;
+  const minutes = Math.floor(value / 60);
+  const rest = Math.round(value % 60);
+  return rest ? `${minutes}분 ${rest}초` : `${minutes}분`;
+}
+
+function renderAnalyticsSummary(payload) {
+  if (!communityElements.analytics) return;
+  const metrics = payload?.metrics || {};
+  const topCountry = payload?.countries?.[0]?.country || "UNK";
+  const countryLabel = topCountry === "UNK" ? "알 수 없음" : topCountry;
+  const returnRate = Math.round(Number(metrics.returnRate || 0) * 100);
+  const cards = [
+    ["방문자 수", formatMetricNumber(metrics.uniqueVisitors)],
+    ["총 방문 수", formatMetricNumber(metrics.totalVisits)],
+    ["페이지 조회", formatMetricNumber(metrics.pageViews)],
+    ["재방문율", `${returnRate}%`],
+    ["평균 체류", formatDuration(metrics.averageSessionSeconds)],
+    ["주요 국가", countryLabel],
+  ];
+  communityElements.analytics.innerHTML = cards
+    .map(
+      ([label, value]) => `
+        <div class="analytics-card">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+async function refreshAnalyticsSummary() {
+  if (!communityElements.analytics) return;
+  try {
+    const payload = await fetchPayload("/api/analytics-summary");
+    renderAnalyticsSummary(payload);
+  } catch {
+    communityElements.analytics.innerHTML = `<div class="empty-state">운영 지표를 불러오지 못했습니다.</div>`;
+  }
+}
+
 function currentTeamIdFromLocation() {
   const params = new URLSearchParams(window.location.search);
   const queryTeam = params.get("team");
@@ -1615,106 +1704,6 @@ function communityExcerpt(value = "", maxLength = 150) {
 function boardLabel(boardId = "") {
   const board = (communityState.payload?.boards || []).find((item) => item.id === boardId);
   return board?.label || "자유";
-}
-
-function renderTeamDirectory(payload) {
-  if (!teamDirectoryElements.grid) return;
-  const teams = payload?.items || [];
-  if (teamDirectoryElements.status) {
-    teamDirectoryElements.status.textContent = `${teams.length}개 팀 · ${formatDate(payload?.refreshedAt)} 갱신`;
-  }
-  teamDirectoryElements.grid.innerHTML = teams
-    .map(
-      (team) => `
-        <article class="team-card">
-          <a class="team-card-main" href="${escapeHtml(team.href || `/teams/${team.id}`)}">
-            <span class="team-card-badge" style="--team-color:${escapeHtml(team.color)};--team-accent:${escapeHtml(team.accent)}">${escapeHtml(team.badge || "FC")}</span>
-            <span>
-              <strong>${escapeHtml(team.nameKo)}</strong>
-              <small>${escapeHtml(team.nameEn)}</small>
-            </span>
-          </a>
-          <p>${escapeHtml(team.description || "")}</p>
-          <footer>
-            <a href="${escapeHtml(team.communityHref || `/community.html?team=${team.id}`)}">게시판</a>
-            <span>${team.status === "active" ? "운영중" : "준비중"}</span>
-          </footer>
-        </article>
-      `,
-    )
-    .join("");
-}
-
-async function refreshTeamDirectory() {
-  if (!teamDirectoryElements.grid) return;
-  try {
-    const payload = await fetchPayload("/api/teams");
-    teamState.items = payload.items || [];
-    renderTeamDirectory(payload);
-  } catch {
-    if (teamDirectoryElements.status) teamDirectoryElements.status.textContent = "팀 목록 연결 실패";
-  }
-}
-
-function renderTeamHub(team, postsPayload = null) {
-  if (!teamHubElements.root || !team) return;
-  if (teamHubElements.badge) teamHubElements.badge.textContent = team.badge || "FC";
-  if (teamHubElements.name) teamHubElements.name.textContent = team.nameKo || team.shortName || "팀";
-  if (teamHubElements.english) teamHubElements.english.textContent = team.nameEn || "";
-  if (teamHubElements.description) teamHubElements.description.textContent = team.description || "";
-  if (teamHubElements.root) {
-    teamHubElements.root.style.setProperty("--team-color", team.color || "#0b1f43");
-    teamHubElements.root.style.setProperty("--team-accent", team.accent || "#d7a84b");
-  }
-  if (teamHubElements.communityLink) teamHubElements.communityLink.href = team.communityHref || `/community.html?team=${team.id}`;
-  if (teamHubElements.cafeLink) {
-    teamHubElements.cafeLink.href = safeHttpUrl(team.cafeUrl) || "#";
-    teamHubElements.cafeLink.hidden = !safeHttpUrl(team.cafeUrl);
-  }
-  if (teamHubElements.links) {
-    teamHubElements.links.innerHTML = (team.pages || [])
-      .map((page) => `<a class="hub-link" href="${escapeHtml(page.href)}">${escapeHtml(page.label)}</a>`)
-      .join("");
-  }
-  if (teamHubElements.stats) {
-    const posts = postsPayload?.items || [];
-    teamHubElements.stats.innerHTML = `
-      <div><span>Team</span><strong>${escapeHtml(team.shortName || team.nameKo)}</strong></div>
-      <div><span>Board</span><strong>${posts.length} posts</strong></div>
-      <div><span>Status</span><strong>${team.status === "active" ? "Live" : "Ready"}</strong></div>
-    `;
-  }
-  if (teamHubElements.preview) {
-    const posts = (postsPayload?.items || []).slice(0, 3);
-    teamHubElements.preview.innerHTML = posts.length
-      ? posts
-          .map(
-            (post) => `
-              <a class="hub-post" href="/community.html?team=${escapeHtml(team.id)}&post=${escapeHtml(post.id)}">
-                <span>${escapeHtml(post.boardLabel || boardLabel(post.board))}</span>
-                <strong>${escapeHtml(post.title)}</strong>
-                <small>${escapeHtml(formatCommunityDate(post.createdAt))} · 댓글 ${post.commentCount || 0}</small>
-              </a>
-            `,
-          )
-          .join("")
-      : `<div class="empty-state">아직 올라온 팬 게시글이 없습니다.</div>`;
-  }
-}
-
-async function refreshTeamHub() {
-  if (!teamHubElements.root) return;
-  const teamId = currentTeamIdFromLocation();
-  try {
-    const [teamPayload, postsPayload] = await Promise.all([
-      fetchPayload(`/api/teams/${encodeURIComponent(teamId)}`),
-      fetchPayload(`/api/community-posts?team=${encodeURIComponent(teamId)}&board=all`),
-    ]);
-    teamState.current = teamPayload.item;
-    renderTeamHub(teamPayload.item, postsPayload);
-  } catch {
-    if (teamHubElements.description) teamHubElements.description.textContent = "팀 허브를 불러오지 못했습니다.";
-  }
 }
 
 function renderCommunityBoards(boards = []) {
@@ -2150,6 +2139,14 @@ communityElements.commentForm?.addEventListener("submit", async (event) => {
   }
 });
 
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") sendEngagement(true);
+});
+
+window.addEventListener("pagehide", () => {
+  sendEngagement(true);
+});
+
 document.querySelectorAll(".top-nav a").forEach((link) => {
   const page = new URL(link.href, window.location.href).pathname.split("/").pop();
   const endpoint = navEndpointByPage[page];
@@ -2167,6 +2164,8 @@ window.addEventListener("resize", () => {
 });
 
 markActiveNav();
+initAnalyticsIdentity();
+sendAnalytics("pageview");
 refreshVersionBadge();
 renderTicker();
 refreshTicker();
@@ -2180,9 +2179,8 @@ refreshPlayerDetail();
 refreshInjuries();
 refreshResults();
 refreshWorldCup();
-refreshTeamDirectory();
-refreshTeamHub();
 refreshCommunity();
+refreshAnalyticsSummary();
 window.setInterval(() => {
   refreshFeed("korean");
   refreshFeed("english");
@@ -2191,5 +2189,5 @@ window.setInterval(() => {
   refreshWorldCup();
   refreshTodayBrief();
   refreshCafeHot();
-  refreshTeamHub();
+  refreshAnalyticsSummary();
 }, 60_000);

@@ -21,6 +21,7 @@ const crawlerUserAgent =
 const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 const communityStorageFile = path.join(root, "data", "community-store.json");
+const analyticsStorageFile = path.join(root, "data", "analytics-store.json");
 
 function readGitValue(command) {
   try {
@@ -508,8 +509,6 @@ const allowedStaticFiles = new Set([
   "injuries.html",
   "results.html",
   "worldcup.html",
-  "teams.html",
-  "team.html",
   "community.html",
   "styles.css",
   "app.js",
@@ -1252,7 +1251,7 @@ const fallbackTeams = [
     status: "active",
     color: "#0b1f43",
     accent: "#d7a84b",
-    description: "Spurs Pulse의 첫 번째 팀 허브입니다. 토트넘 뉴스, 이적시장, 선수단, 경기 결과, 팬 게시판을 한 곳에 묶습니다.",
+    description: "Spurs Pulse의 토트넘 커뮤니티 설정입니다. 토트넘 뉴스, 이적시장, 선수단, 경기 결과, 팬 게시판을 한 곳에 묶습니다.",
     cafeUrl: "https://cafe.naver.com/spurskoreaspurs",
     pages: [
       { label: "국문 피드", href: "/korean.html" },
@@ -1317,7 +1316,7 @@ function publicTeam(team = {}) {
     accent: cleanSingleLine(team.accent || "#d7a84b", 20),
     description: cleanMultiline(team.description || "", 500),
     cafeUrl: cleanSingleLine(team.cafeUrl || "", 220),
-    href: `/teams/${id}`,
+    href: `/community.html?team=${id}`,
     communityHref: `/community.html?team=${id}`,
     pages: Array.isArray(team.pages) ? team.pages : [],
   };
@@ -1416,6 +1415,290 @@ async function writeLocalCommunityStore(store) {
   };
   localCommunityWriteQueue = localCommunityWriteQueue.then(write, write);
   await localCommunityWriteQueue;
+}
+
+function emptyAnalyticsStore() {
+  return {
+    totals: {
+      pageViews: 0,
+      visits: 0,
+      totalDurationMs: 0,
+    },
+    visitors: {},
+    sessions: {},
+    pages: {},
+  };
+}
+
+async function readLocalAnalyticsStore() {
+  try {
+    const raw = await fs.readFile(analyticsStorageFile, "utf8");
+    const parsed = JSON.parse(raw);
+    return {
+      ...emptyAnalyticsStore(),
+      ...parsed,
+      totals: {
+        ...emptyAnalyticsStore().totals,
+        ...(parsed.totals || {}),
+      },
+      visitors: parsed.visitors || {},
+      sessions: parsed.sessions || {},
+      pages: parsed.pages || {},
+    };
+  } catch {
+    return emptyAnalyticsStore();
+  }
+}
+
+let localAnalyticsWriteQueue = Promise.resolve();
+
+async function writeLocalAnalyticsStore(store) {
+  const write = async () => {
+    await fs.mkdir(path.dirname(analyticsStorageFile), { recursive: true });
+    await fs.writeFile(analyticsStorageFile, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  };
+  localAnalyticsWriteQueue = localAnalyticsWriteQueue.then(write, write);
+  await localAnalyticsWriteQueue;
+}
+
+function analyticsHash(value = "") {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, 32);
+}
+
+function analyticsCountry(request) {
+  const value =
+    request.headers["cf-ipcountry"] ||
+    request.headers["x-vercel-ip-country"] ||
+    request.headers["x-country-code"] ||
+    request.headers["cloudfront-viewer-country"] ||
+    "";
+  return cleanSingleLine(Array.isArray(value) ? value[0] : value, 8).toUpperCase() || "UNK";
+}
+
+function analyticsPath(value = "/") {
+  const raw = String(value || "/");
+  try {
+    const parsed = new URL(raw, publicBaseUrl);
+    return parsed.pathname === "/" ? "/" : parsed.pathname.slice(0, 120);
+  } catch {
+    const safe = raw.split("?")[0].replace(/[^a-zA-Z0-9/_./-]/g, "").slice(0, 120);
+    return safe.startsWith("/") ? safe : "/";
+  }
+}
+
+function analyticsLabelForPath(pathname = "") {
+  const labels = {
+    "/": "홈",
+    "/index.html": "홈",
+    "/community.html": "토트넘 커뮤니티",
+    "/korean.html": "국문 피드",
+    "/english.html": "영문 피드",
+    "/market.html": "이적 시장",
+    "/players.html": "선수단",
+    "/injuries.html": "부상 이력",
+    "/results.html": "경기 결과",
+    "/worldcup.html": "월드컵",
+  };
+  if (pathname.startsWith("/community/")) return "토트넘 커뮤니티";
+  return labels[pathname] || pathname || "페이지";
+}
+
+function analyticsSummaryFromStore(store = emptyAnalyticsStore(), dataSource = "local-file") {
+  const visitors = Object.values(store.visitors || {});
+  const sessions = Object.values(store.sessions || {});
+  const totalVisits = Number(store.totals?.visits || sessions.length || 0);
+  const pageViews = Number(store.totals?.pageViews || 0);
+  const uniqueVisitors = visitors.length;
+  const returningVisitors = visitors.filter((visitor) => Number(visitor.visits || 0) > 1).length;
+  const totalDurationMs = Number(store.totals?.totalDurationMs || 0);
+  const averageSessionSeconds = totalVisits ? Math.round(totalDurationMs / totalVisits / 1000) : 0;
+  const pagesPerVisit = totalVisits ? Number((pageViews / totalVisits).toFixed(2)) : 0;
+  const countries = new Map();
+  visitors.forEach((visitor) => {
+    const country = visitor.country || "UNK";
+    const current = countries.get(country) || { country, visitors: 0, visits: 0 };
+    current.visitors += 1;
+    current.visits += Number(visitor.visits || 0);
+    countries.set(country, current);
+  });
+  const topPages = Object.entries(store.pages || {})
+    .map(([pathname, item]) => ({
+      path: pathname,
+      label: analyticsLabelForPath(pathname),
+      views: Number(item.views || 0),
+    }))
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 5);
+
+  return {
+    mode: "analytics-summary",
+    refreshedAt: new Date().toISOString(),
+    source: {
+      label: "Spurs Pulse first-party analytics",
+      dataSource,
+      countryPrecision: "request-header",
+    },
+    metrics: {
+      uniqueVisitors,
+      totalVisits,
+      pageViews,
+      returningVisitors,
+      returnRate: uniqueVisitors ? Number((returningVisitors / uniqueVisitors).toFixed(3)) : 0,
+      averageSessionSeconds,
+      pagesPerVisit,
+      totalDurationSeconds: Math.round(totalDurationMs / 1000),
+    },
+    countries: [...countries.values()].sort((a, b) => b.visitors - a.visitors).slice(0, 8),
+    topPages,
+  };
+}
+
+async function getAnalyticsSummary() {
+  if (hasSupabaseCommunityStore()) return getSupabaseAnalyticsSummary();
+  return analyticsSummaryFromStore(await readLocalAnalyticsStore());
+}
+
+async function getSupabaseAnalyticsSummary() {
+  const rows = await supabaseRequest(
+    "site_analytics_events?select=event_type,visitor_key,session_key,path,country,duration_ms,created_at&order=created_at.desc&limit=10000",
+  );
+  const store = emptyAnalyticsStore();
+  (rows || []).forEach((row) => {
+    const visitorId = row.visitor_key || "";
+    const sessionId = row.session_key || "";
+    if (!visitorId || !sessionId) return;
+    const createdAt = row.created_at || communityNow();
+    const country = row.country || "UNK";
+    const visitor = store.visitors[visitorId] || {
+      firstSeenAt: createdAt,
+      lastSeenAt: createdAt,
+      visits: 0,
+      pageViews: 0,
+      totalDurationMs: 0,
+      country,
+    };
+    visitor.lastSeenAt = createdAt > visitor.lastSeenAt ? createdAt : visitor.lastSeenAt;
+    visitor.firstSeenAt = createdAt < visitor.firstSeenAt ? createdAt : visitor.firstSeenAt;
+    visitor.country = visitor.country && visitor.country !== "UNK" ? visitor.country : country;
+    store.visitors[visitorId] = visitor;
+
+    const isNewSession = !store.sessions[sessionId];
+    const session = store.sessions[sessionId] || {
+      visitorId,
+      startedAt: createdAt,
+      lastSeenAt: createdAt,
+      pageViews: 0,
+      totalDurationMs: 0,
+      country,
+    };
+    session.lastSeenAt = createdAt > session.lastSeenAt ? createdAt : session.lastSeenAt;
+    session.startedAt = createdAt < session.startedAt ? createdAt : session.startedAt;
+    store.sessions[sessionId] = session;
+    if (isNewSession) {
+      store.totals.visits += 1;
+      visitor.visits = Number(visitor.visits || 0) + 1;
+    }
+
+    if (row.event_type === "pageview") {
+      store.totals.pageViews += 1;
+      visitor.pageViews = Number(visitor.pageViews || 0) + 1;
+      session.pageViews = Number(session.pageViews || 0) + 1;
+      const pathname = row.path || "/";
+      const page = store.pages[pathname] || { views: 0 };
+      page.views += 1;
+      page.lastSeenAt = createdAt;
+      store.pages[pathname] = page;
+    } else if (row.event_type === "engagement") {
+      const durationMs = Math.max(0, Math.min(30 * 60 * 1000, Number(row.duration_ms || 0)));
+      store.totals.totalDurationMs += durationMs;
+      visitor.totalDurationMs = Number(visitor.totalDurationMs || 0) + durationMs;
+      session.totalDurationMs = Number(session.totalDurationMs || 0) + durationMs;
+    }
+  });
+  return analyticsSummaryFromStore(store, "supabase");
+}
+
+async function recordAnalyticsEvent(request) {
+  const body = await readJsonBody(request, 16 * 1024);
+  const type = body.type === "engagement" ? "engagement" : "pageview";
+  const now = communityNow();
+  const visitorSeed =
+    cleanSingleLine(body.visitorId, 160) ||
+    `${request.headers["x-forwarded-for"] || request.socket?.remoteAddress || ""}|${request.headers["user-agent"] || ""}`;
+  const sessionSeed = cleanSingleLine(body.sessionId, 160) || `${visitorSeed}|${new Date().toISOString().slice(0, 10)}`;
+  const visitorId = analyticsHash(visitorSeed);
+  const sessionId = analyticsHash(sessionSeed);
+  const pathname = analyticsPath(body.path || request.headers.referer || "/");
+  const country = analyticsCountry(request);
+
+  if (hasSupabaseCommunityStore()) {
+    const durationMs = type === "engagement" ? Math.max(0, Math.min(30 * 60 * 1000, Number(body.durationMs || 0))) : 0;
+    await supabaseRequest("site_analytics_events", {
+      method: "POST",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        event_type: type,
+        visitor_key: visitorId,
+        session_key: sessionId,
+        path: pathname,
+        country,
+        duration_ms: durationMs,
+        created_at: now,
+      }),
+    });
+    return getAnalyticsSummary();
+  }
+
+  const store = await readLocalAnalyticsStore();
+
+  const visitor = store.visitors[visitorId] || {
+    firstSeenAt: now,
+    lastSeenAt: now,
+    visits: 0,
+    pageViews: 0,
+    totalDurationMs: 0,
+    country,
+  };
+  visitor.lastSeenAt = now;
+  visitor.country = visitor.country && visitor.country !== "UNK" ? visitor.country : country;
+  store.visitors[visitorId] = visitor;
+
+  const isNewSession = !store.sessions[sessionId];
+  const session = store.sessions[sessionId] || {
+    visitorId,
+    startedAt: now,
+    lastSeenAt: now,
+    pageViews: 0,
+    totalDurationMs: 0,
+    country,
+  };
+  session.lastSeenAt = now;
+  session.country = session.country && session.country !== "UNK" ? session.country : country;
+  store.sessions[sessionId] = session;
+
+  if (isNewSession) {
+    store.totals.visits = Number(store.totals.visits || 0) + 1;
+    visitor.visits = Number(visitor.visits || 0) + 1;
+  }
+
+  if (type === "pageview") {
+    store.totals.pageViews = Number(store.totals.pageViews || 0) + 1;
+    visitor.pageViews = Number(visitor.pageViews || 0) + 1;
+    session.pageViews = Number(session.pageViews || 0) + 1;
+    const page = store.pages[pathname] || { views: 0 };
+    page.views = Number(page.views || 0) + 1;
+    page.lastSeenAt = now;
+    store.pages[pathname] = page;
+  } else {
+    const durationMs = Math.max(0, Math.min(30 * 60 * 1000, Number(body.durationMs || 0)));
+    store.totals.totalDurationMs = Number(store.totals.totalDurationMs || 0) + durationMs;
+    visitor.totalDurationMs = Number(visitor.totalDurationMs || 0) + durationMs;
+    session.totalDurationMs = Number(session.totalDurationMs || 0) + durationMs;
+  }
+
+  await writeLocalAnalyticsStore(store);
+  return analyticsSummaryFromStore(store);
 }
 
 function communityVoterKey(request, targetType, targetId) {
@@ -3190,8 +3473,6 @@ function resolveStaticFile(urlPathname) {
   }
 
   if (pathname === "/") pathname = "/index.html";
-  if (pathname === "/teams") pathname = "/teams.html";
-  if (/^\/teams\/[a-z0-9-]+$/i.test(pathname)) pathname = "/team.html";
   if (pathname === "/community") pathname = "/community.html";
   if (/^\/community\/[a-z0-9-]+$/i.test(pathname)) pathname = "/community.html";
   if (!pathname.startsWith("/") || pathname.includes("\0") || pathname.includes("\\")) return null;
@@ -3291,6 +3572,18 @@ async function handleRequest(request, response) {
       }
       const result = await createCommunityVote(request);
       sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (url.pathname === "/api/analytics-summary") {
+      sendJson(response, 200, await getAnalyticsSummary());
+      return;
+    }
+    if (url.pathname === "/api/analytics-event") {
+      if (request.method !== "POST") {
+        sendText(response, 405, "Method not allowed", { allow: "POST" });
+        return;
+      }
+      sendJson(response, 200, await recordAnalyticsEvent(request));
       return;
     }
     if (!["GET", "HEAD"].includes(request.method)) {

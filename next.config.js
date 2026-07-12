@@ -7,8 +7,6 @@ const htmlFiles = [
   "player.html",
   "players.html",
   "results.html",
-  "team.html",
-  "teams.html",
   "worldcup.html",
 ];
 
@@ -18,8 +16,6 @@ const nextConfig = {
     return [
       { source: "/", destination: "/index.html" },
       { source: "/healthz", destination: "/api/healthz" },
-      { source: "/teams", destination: "/teams.html" },
-      { source: "/teams/:teamId", destination: "/team.html?team=:teamId" },
       { source: "/community", destination: "/community.html" },
       { source: "/community/:teamId", destination: "/community.html?team=:teamId" },
       ...htmlFiles.map((file) => ({

@@ -2639,6 +2639,38 @@ textarea {
   margin: 18px 0;
 }
 
+.community-analytics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.analytics-card {
+  min-height: 78px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--soft-shadow);
+}
+
+.analytics-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.analytics-card strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--navy);
+  font-size: clamp(20px, 2.6vw, 30px);
+  font-weight: 950;
+  line-height: 1.05;
+}
+
 .community-layout {
   display: grid;
   grid-template-columns: minmax(260px, 0.75fr) minmax(320px, 1fr) minmax(380px, 1.1fr);
@@ -2860,6 +2892,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .community-analytics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .player-portrait {
     min-height: 420px;
   }
@@ -2912,6 +2948,10 @@ textarea {
 
   .form-row {
     grid-template-columns: 1fr;
+  }
+
+  .community-analytics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .squad-heading {

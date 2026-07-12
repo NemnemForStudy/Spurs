@@ -9,7 +9,7 @@
     "status": "active",
     "color": "#0b1f43",
     "accent": "#d7a84b",
-    "description": "Spurs Pulse의 첫 번째 팀 허브입니다. 토트넘 뉴스, 이적시장, 선수단, 경기 결과, 팬 게시판을 한 곳에 묶습니다.",
+    "description": "Spurs Pulse의 토트넘 커뮤니티 설정입니다. 토트넘 뉴스, 이적시장, 선수단, 경기 결과, 팬 게시판을 한 곳에 묶습니다.",
     "cafeUrl": "https://cafe.naver.com/spurskoreaspurs",
     "pages": [
       { "label": "국문 피드", "href": "/korean.html" },

@@ -40,3 +40,23 @@ create table if not exists public.community_votes (
 
 create index if not exists community_votes_target_idx
   on public.community_votes (target_type, target_id);
+
+create table if not exists public.site_analytics_events (
+  id uuid primary key,
+  event_type text not null check (event_type in ('pageview', 'engagement')),
+  visitor_key text not null,
+  session_key text not null,
+  path text not null default '/',
+  country text not null default 'UNK',
+  duration_ms integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists site_analytics_events_created_idx
+  on public.site_analytics_events (created_at desc);
+
+create index if not exists site_analytics_events_visitor_idx
+  on public.site_analytics_events (visitor_key);
+
+create index if not exists site_analytics_events_session_idx
+  on public.site_analytics_events (session_key);
