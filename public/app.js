@@ -66,6 +66,9 @@ const communityState = {
   items: [],
   selectedId: "",
   selectedPost: null,
+  query: "",
+  page: 1,
+  perPage: 4,
   payload: null,
   ownerToken: "",
   ownedTargets: new Set(),
@@ -126,7 +129,6 @@ const warmableEndpoints = [
   "/api/world-cup",
   "/api/cafe-hot",
   "/api/community-posts?team=tottenham",
-  "/api/analytics-summary",
 ];
 
 const navEndpointByPage = {
@@ -199,8 +201,14 @@ const communityElements = {
   teamName: document.querySelector("#communityTeamName"),
   teamEnglish: document.querySelector("#communityTeamEnglish"),
   boards: document.querySelector("#communityBoards"),
+  search: document.querySelector("#communitySearch"),
+  listCount: document.querySelector("#communityListCount"),
   posts: document.querySelector("#communityPosts"),
   empty: document.querySelector("#communityEmpty"),
+  pager: document.querySelector("#communityPager"),
+  prevPage: document.querySelector("#communityPrevPage"),
+  nextPage: document.querySelector("#communityNextPage"),
+  pageStatus: document.querySelector("#communityPageStatus"),
   detail: document.querySelector("#communityDetail"),
   form: document.querySelector("#communityPostForm"),
   boardInput: document.querySelector("#communityPostBoard"),
@@ -217,6 +225,18 @@ const communityElements = {
   reportReason: document.querySelector("#communityReportReason"),
   reportDetails: document.querySelector("#communityReportDetails"),
   reportCancel: document.querySelector("#communityReportCancel"),
+};
+
+const adminElements = {
+  root: document.querySelector("#adminPage"),
+  form: document.querySelector("#adminLoginForm"),
+  keyInput: document.querySelector("#adminKey"),
+  logout: document.querySelector("#adminLogout"),
+  refresh: document.querySelector("#adminRefresh"),
+  status: document.querySelector("#adminStatus"),
+  metrics: document.querySelector("#adminMetrics"),
+  topPages: document.querySelector("#adminTopPages"),
+  countries: document.querySelector("#adminCountries"),
 };
 
 const depthSlots = [
@@ -1732,6 +1752,106 @@ async function refreshAnalyticsSummary() {
   }
 }
 
+const adminKeyStorageKey = "spurs-pulse-admin-key";
+
+function adminKey() {
+  try {
+    return sessionStorage.getItem(adminKeyStorageKey) || "";
+  } catch {
+    return "";
+  }
+}
+
+function setAdminKey(value = "") {
+  try {
+    if (value) sessionStorage.setItem(adminKeyStorageKey, value);
+    else sessionStorage.removeItem(adminKeyStorageKey);
+  } catch {
+    // Session storage is only a convenience for the local admin screen.
+  }
+}
+
+function renderAdminSummary(payload) {
+  if (!adminElements.metrics) return;
+  const metrics = payload?.metrics || {};
+  const topCountry = payload?.countries?.[0]?.country || "UNK";
+  const countryLabel = topCountry === "UNK" ? "알 수 없음" : topCountry;
+  const returnRate = Math.round(Number(metrics.returnRate || 0) * 100);
+  const cards = [
+    ["방문자 수", formatMetricNumber(metrics.uniqueVisitors)],
+    ["총 방문 수", formatMetricNumber(metrics.totalVisits)],
+    ["페이지 조회", formatMetricNumber(metrics.pageViews)],
+    ["재방문율", `${returnRate}%`],
+    ["평균 체류", formatDuration(metrics.averageSessionSeconds)],
+    ["주요 국가", countryLabel],
+  ];
+
+  adminElements.metrics.innerHTML = cards
+    .map(
+      ([label, value]) => `
+        <div class="analytics-card">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `,
+    )
+    .join("");
+
+  if (adminElements.topPages) {
+    const pages = payload?.topPages || [];
+    adminElements.topPages.innerHTML = pages.length
+      ? pages
+          .map(
+            (page) => `
+              <li>
+                <span>${escapeHtml(page.label || page.path || "-")}</span>
+                <strong>${formatMetricNumber(page.views)}회</strong>
+              </li>
+            `,
+          )
+          .join("")
+      : `<li><span>아직 데이터가 없습니다.</span><strong>0회</strong></li>`;
+  }
+
+  if (adminElements.countries) {
+    const countries = payload?.countries || [];
+    adminElements.countries.innerHTML = countries.length
+      ? countries
+          .map(
+            (country) => `
+              <li>
+                <span>${escapeHtml(country.country === "UNK" ? "알 수 없음" : country.country)}</span>
+                <strong>${formatMetricNumber(country.visitors)}명</strong>
+              </li>
+            `,
+          )
+          .join("")
+      : `<li><span>아직 데이터가 없습니다.</span><strong>0명</strong></li>`;
+  }
+}
+
+async function refreshAdminSummary() {
+  if (!adminElements.root) return;
+  const key = adminKey();
+  if (!key) {
+    if (adminElements.status) adminElements.status.textContent = "관리자 키를 입력하세요.";
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/analytics-summary", {
+      cache: "no-store",
+      headers: { "x-admin-key": key },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || "관리자 인증에 실패했습니다.");
+    renderAdminSummary(payload);
+    if (adminElements.status) adminElements.status.textContent = `${formatDate(payload.refreshedAt)} 갱신`;
+  } catch (error) {
+    if (adminElements.status) adminElements.status.textContent = error.message || "운영 지표를 불러오지 못했습니다.";
+  }
+}
+
 function currentTeamIdFromLocation() {
   const params = new URLSearchParams(window.location.search);
   const queryTeam = params.get("team");
@@ -1763,6 +1883,36 @@ function communityExcerpt(value = "", maxLength = 150) {
 function boardLabel(boardId = "") {
   const board = (communityState.payload?.boards || []).find((item) => item.id === boardId);
   return board?.label || "자유";
+}
+
+function filteredCommunityPosts() {
+  const query = communityState.query.trim().toLowerCase();
+  const posts = communityState.items || [];
+  if (!query) return posts;
+  return posts.filter((post) =>
+    [post.title, post.body, post.author, post.boardLabel || boardLabel(post.board)]
+      .join(" ")
+      .toLowerCase()
+      .includes(query),
+  );
+}
+
+function pagedCommunityPosts(filtered = filteredCommunityPosts()) {
+  const totalPages = Math.max(1, Math.ceil(filtered.length / communityState.perPage));
+  communityState.page = Math.min(Math.max(1, communityState.page), totalPages);
+  const start = (communityState.page - 1) * communityState.perPage;
+  return {
+    items: filtered.slice(start, start + communityState.perPage),
+    totalPages,
+    totalCount: filtered.length,
+  };
+}
+
+function syncCommunitySelection(pageItems = []) {
+  const filtered = filteredCommunityPosts();
+  const filteredIds = new Set(filtered.map((post) => post.id));
+  if (communityState.selectedId && filteredIds.has(communityState.selectedId)) return;
+  communityState.selectedId = pageItems[0]?.id || filtered[0]?.id || "";
 }
 
 function communityActionButtons(targetType, item = {}) {
@@ -1798,9 +1948,23 @@ function renderCommunityBoards(boards = []) {
 
 function renderCommunityPosts() {
   if (!communityElements.posts) return;
-  const posts = communityState.items || [];
-  if (communityElements.empty) communityElements.empty.hidden = Boolean(posts.length);
-  communityElements.posts.innerHTML = posts
+  const allPosts = communityState.items || [];
+  const filtered = filteredCommunityPosts();
+  const page = pagedCommunityPosts(filtered);
+  syncCommunitySelection(page.items);
+  if (communityElements.empty) {
+    communityElements.empty.hidden = Boolean(page.items.length);
+    communityElements.empty.textContent = allPosts.length ? "검색 결과가 없습니다." : "아직 게시글이 없습니다.";
+  }
+  if (communityElements.listCount) {
+    const searchText = communityState.query ? ` · 검색 ${page.totalCount}개` : "";
+    communityElements.listCount.textContent = `게시글 ${allPosts.length}개 · 댓글 ${Number(communityState.payload?.filter?.comments || 0)}개${searchText}`;
+  }
+  if (communityElements.pager) communityElements.pager.hidden = page.totalPages <= 1;
+  if (communityElements.pageStatus) communityElements.pageStatus.textContent = `${communityState.page} / ${page.totalPages}`;
+  if (communityElements.prevPage) communityElements.prevPage.disabled = communityState.page <= 1;
+  if (communityElements.nextPage) communityElements.nextPage.disabled = communityState.page >= page.totalPages;
+  communityElements.posts.innerHTML = page.items
     .map(
       (post) => `
         <article class="community-post ${communityState.selectedId === post.id ? "is-selected" : ""}" data-community-post="${escapeHtml(post.id)}">
@@ -1922,7 +2086,7 @@ async function refreshCommunity() {
     if (communityElements.teamName) communityElements.teamName.textContent = `${payload.team?.nameKo || "팀"} 커뮤니티`;
     if (communityElements.teamEnglish) communityElements.teamEnglish.textContent = payload.team?.nameEn || "";
     if (communityElements.status) {
-      communityElements.status.textContent = `${payload.filter?.shownCount || 0}개 글 · ${payload.source?.dataSource || "store"} · ${formatDate(payload.refreshedAt)} 갱신`;
+      communityElements.status.textContent = `게시글 ${payload.filter?.shownCount || 0}개 · 댓글 ${payload.filter?.comments || 0}개`;
     }
     renderCommunityBoards(payload.boards || []);
     renderCommunityPosts();
@@ -2167,7 +2331,33 @@ communityElements.boards?.addEventListener("click", (event) => {
   if (!button) return;
   communityState.board = button.dataset.communityBoard || "all";
   communityState.selectedId = "";
+  communityState.page = 1;
   refreshCommunity();
+});
+
+communityElements.search?.addEventListener("input", (event) => {
+  communityState.query = event.target.value || "";
+  communityState.page = 1;
+  communityState.selectedId = "";
+  renderCommunityPosts();
+  refreshCommunityDetail(communityState.selectedId);
+});
+
+communityElements.prevPage?.addEventListener("click", () => {
+  if (communityState.page <= 1) return;
+  communityState.page -= 1;
+  communityState.selectedId = "";
+  renderCommunityPosts();
+  refreshCommunityDetail(communityState.selectedId);
+});
+
+communityElements.nextPage?.addEventListener("click", () => {
+  const totalPages = Math.max(1, Math.ceil(filteredCommunityPosts().length / communityState.perPage));
+  if (communityState.page >= totalPages) return;
+  communityState.page += 1;
+  communityState.selectedId = "";
+  renderCommunityPosts();
+  refreshCommunityDetail(communityState.selectedId);
 });
 
 communityElements.posts?.addEventListener("click", (event) => {
@@ -2232,6 +2422,7 @@ communityElements.form?.addEventListener("submit", async (event) => {
     });
     const created = payload.items?.[0];
     communityState.selectedId = created?.id || "";
+    communityState.page = 1;
     markOwnedCommunityTarget("post", created?.id || payload.createdPostId || "");
     if (communityElements.titleInput) communityElements.titleInput.value = "";
     if (communityElements.bodyInput) communityElements.bodyInput.value = "";
@@ -2296,6 +2487,24 @@ communityElements.reportForm?.addEventListener("submit", async (event) => {
   }
 });
 
+adminElements.form?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const key = adminElements.keyInput?.value?.trim() || "";
+  setAdminKey(key);
+  await refreshAdminSummary();
+});
+
+adminElements.logout?.addEventListener("click", () => {
+  setAdminKey("");
+  if (adminElements.keyInput) adminElements.keyInput.value = "";
+  if (adminElements.status) adminElements.status.textContent = "관리자 키를 입력하세요.";
+  if (adminElements.metrics) adminElements.metrics.innerHTML = "";
+  if (adminElements.topPages) adminElements.topPages.innerHTML = "";
+  if (adminElements.countries) adminElements.countries.innerHTML = "";
+});
+
+adminElements.refresh?.addEventListener("click", refreshAdminSummary);
+
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") sendEngagement(true);
 });
@@ -2323,6 +2532,7 @@ window.addEventListener("resize", () => {
 markActiveNav();
 initAnalyticsIdentity();
 initCommunityIdentity();
+if (adminElements.keyInput && adminKey()) adminElements.keyInput.value = adminKey();
 sendAnalytics("pageview");
 refreshVersionBadge();
 renderTicker();
@@ -2338,7 +2548,7 @@ refreshInjuries();
 refreshResults();
 refreshWorldCup();
 refreshCommunity();
-refreshAnalyticsSummary();
+refreshAdminSummary();
 window.setInterval(() => {
   refreshFeed("korean");
   refreshFeed("english");
@@ -2347,5 +2557,5 @@ window.setInterval(() => {
   refreshWorldCup();
   refreshTodayBrief();
   refreshCafeHot();
-  refreshAnalyticsSummary();
+  refreshAdminSummary();
 }, 60_000);

@@ -38,9 +38,14 @@
           </div>
         </div>
 
-        <div id="communityAnalytics" class="community-analytics" aria-label="운영 지표"></div>
-
         <div id="communityBoards" class="filter-row community-board-row" aria-label="게시판 선택"></div>
+
+        <div class="community-toolbar">
+          <label class="search-box community-search" aria-label="게시글 검색">
+            <input id="communitySearch" type="search" placeholder="게시글 검색" autocomplete="off" />
+          </label>
+          <span id="communityListCount" class="community-list-count">게시글 0개 · 댓글 0개</span>
+        </div>
 
         <div class="community-layout">
           <aside class="community-compose">
@@ -70,6 +75,11 @@
           <section class="community-list-panel" aria-label="게시글 목록">
             <div id="communityPosts" class="community-post-list"></div>
             <div id="communityEmpty" class="empty-state" hidden>아직 게시글이 없습니다.</div>
+            <div id="communityPager" class="community-pager" hidden>
+              <button id="communityPrevPage" class="pager-button" type="button">이전</button>
+              <span id="communityPageStatus">1 / 1</span>
+              <button id="communityNextPage" class="pager-button" type="button">다음</button>
+            </div>
           </section>
 
           <section class="community-detail-panel" aria-label="게시글 상세">

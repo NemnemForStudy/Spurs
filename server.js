@@ -3742,6 +3742,10 @@ async function handleRequest(request, response) {
       return;
     }
     if (url.pathname === "/api/analytics-summary") {
+      if (!isCommunityAdmin(request.headers["x-admin-key"] || "")) {
+        sendJson(response, 403, { mode: "admin-required", message: "관리자 인증이 필요합니다." });
+        return;
+      }
       sendJson(response, 200, await getAnalyticsSummary());
       return;
     }

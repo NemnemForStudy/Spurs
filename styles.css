@@ -2639,6 +2639,24 @@ textarea {
   margin: 18px 0;
 }
 
+.community-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.community-search {
+  width: min(360px, 100%);
+}
+
+.community-list-count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .community-analytics {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -2755,6 +2773,21 @@ textarea {
 .community-post-list {
   display: grid;
   gap: 10px;
+}
+
+.community-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.community-pager[hidden] {
+  display: none;
 }
 
 .community-post,
@@ -2925,6 +2958,100 @@ textarea {
   color: var(--ink);
 }
 
+.admin-page {
+  padding: 28px clamp(16px, 3vw, 32px) 48px;
+}
+
+.admin-login {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--soft-shadow);
+}
+
+.admin-login label {
+  display: grid;
+  gap: 6px;
+  min-width: min(320px, 100%);
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.admin-login input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #f8fbff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+}
+
+.admin-login input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(22, 79, 163, 0.12);
+}
+
+.admin-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.admin-panel {
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--soft-shadow);
+}
+
+.admin-panel h2 {
+  margin: 0 0 12px;
+  color: var(--navy);
+  font-size: 20px;
+}
+
+.admin-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.admin-list li:first-child {
+  border-top: 0;
+}
+
+.admin-list span {
+  color: #24344f;
+  font-weight: 800;
+}
+
+.admin-list strong {
+  color: var(--navy);
+  font-weight: 950;
+}
+
 @media (max-width: 920px) {
   .hero,
   .split-section,
@@ -2980,6 +3107,10 @@ textarea {
 
   .community-analytics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-panels {
+    grid-template-columns: 1fr;
   }
 
   .player-portrait {
@@ -3038,6 +3169,16 @@ textarea {
 
   .community-analytics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .community-toolbar,
+  .admin-login {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .community-list-count {
+    width: 100%;
   }
 
   .squad-heading {
