@@ -2933,6 +2933,13 @@ function filterTrustedReporterItems(items) {
   });
 }
 
+function reporterPriorityScore(item) {
+  if (item.reporter === "Paul O'Keefe") return 6;
+  if (item.reporter === "Fabrizio Romano") return 3;
+  if (["Alasdair Gold", "David Ornstein", "Dan Kilpatrick", "Jack Pitt-Brooke"].includes(item.reporter)) return 2;
+  return item.reporter ? 1 : 0;
+}
+
 function isTottenhamRelated(item) {
   if (item.platform === "Naver Cafe") return true;
 
@@ -3441,6 +3448,7 @@ async function fetchDcinside() {
 const naverCafeConfig = {
   clubId: "29267144",
   homeUrl: "https://cafe.naver.com/spurskoreaspurs",
+  pagesPerMenu: 4,
   menus: [
     { id: 116, label: "오피셜" },
     { id: 58, label: "이적 소식" },
@@ -3489,12 +3497,12 @@ function normalizeNaverCafeArticle(article, menu) {
   };
 }
 
-async function fetchNaverCafeMenu(menu) {
+async function fetchNaverCafeMenuPage(menu, page = 1) {
   const url = new URL(
     `https://apis.naver.com/cafe-web/cafe-boardlist-api/v1/cafes/${naverCafeConfig.clubId}/menus/${menu.id}/articles`,
   );
-  url.searchParams.set("perPage", "30");
-  url.searchParams.set("page", "1");
+  url.searchParams.set("perPage", "50");
+  url.searchParams.set("page", String(page));
   url.searchParams.set("sortBy", "TIME");
   url.searchParams.set("viewType", "L");
 
@@ -3509,6 +3517,12 @@ async function fetchNaverCafeMenu(menu) {
   });
   const payload = JSON.parse(raw);
   return (payload.result?.articleList || []).map((article) => normalizeNaverCafeArticle(article, menu)).filter(Boolean);
+}
+
+async function fetchNaverCafeMenu(menu) {
+  const pages = Array.from({ length: menu.pages || naverCafeConfig.pagesPerMenu }, (_, index) => index + 1);
+  const settled = await Promise.allSettled(pages.map((page) => fetchNaverCafeMenuPage(menu, page)));
+  return dedupeItems(settled.flatMap((result) => (result.status === "fulfilled" ? result.value : [])));
 }
 
 async function fetchNaverCafe() {
@@ -3614,8 +3628,9 @@ async function getCommunityFeed() {
     )
     .sort((a, b) => {
       const dateDiff = new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0);
+      const priorityDiff = reporterPriorityScore(b) - reporterPriorityScore(a);
       const reporterDiff = Number(Boolean(b.reporter)) - Number(Boolean(a.reporter));
-      return reporterDiff || dateDiff || b.score - a.score;
+      return priorityDiff || reporterDiff || dateDiff || b.score - a.score;
     });
   const items = diversifyBySource(sortedItems, 12, 84).map(sanitizeFeedItem).filter((item) => item.title && item.url);
 
@@ -3656,7 +3671,11 @@ async function getTransferFeed() {
   const transferItems = diversifyBySource(
     [...baseFeed.items, ...xSource.items]
       .filter(isReliableTransferItem)
-      .sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0)),
+      .sort((a, b) => {
+        const priorityDiff = reporterPriorityScore(b) - reporterPriorityScore(a);
+        const dateDiff = new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0);
+        return priorityDiff || dateDiff || b.score - a.score;
+      }),
     12,
     84,
   );
