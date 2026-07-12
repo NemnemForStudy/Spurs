@@ -48,7 +48,7 @@ const resultState = {
   payload: null,
   filter: "ALL",
   query: "",
-  season: "2025",
+  season: "2026",
   requestId: 0,
 };
 
@@ -1145,6 +1145,7 @@ function renderResultFilters() {
 
 function filteredResultItems() {
   const query = resultState.query.trim().toLowerCase();
+  const allScheduled = resultState.items.length > 0 && resultState.items.every((item) => item.outcome === "scheduled");
   return resultState.items
     .filter((item) => {
       const matchesFilter = resultState.filter === "ALL" || item.competition === resultState.filter;
@@ -1166,7 +1167,12 @@ function filteredResultItems() {
         .toLowerCase()
         .includes(query);
     })
-    .sort((a, b) => String(b.sortKey || "").localeCompare(String(a.sortKey || "")));
+    .sort((a, b) => {
+      const dateSort = allScheduled
+        ? String(a.sortKey || "").localeCompare(String(b.sortKey || ""))
+        : String(b.sortKey || "").localeCompare(String(a.sortKey || ""));
+      return dateSort || String(a.competition || "").localeCompare(String(b.competition || ""));
+    });
 }
 
 function renderResults() {
@@ -1709,7 +1715,7 @@ resultElements.filters?.addEventListener("click", (event) => {
 resultElements.seasons?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-result-season]");
   if (!button) return;
-  resultState.season = button.dataset.resultSeason || "2025";
+  resultState.season = button.dataset.resultSeason || "2026";
   resultState.filter = "ALL";
   resultState.items = [];
   resultState.payload = null;

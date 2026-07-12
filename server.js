@@ -333,7 +333,10 @@ const injurySeasons = [
   { id: "2023", label: "23/24" },
 ];
 
-const resultSeasons = injurySeasons;
+const resultSeasons = [
+  { id: "2026", label: "26/27" },
+  ...injurySeasons,
+];
 
 const squadFallbackPlayers = [
   { name: "Guglielmo Vicario", number: "1", position: "Goalkeeper", nationality: "Italy", status: "first-team", profileUrl: "https://www.tottenhamhotspur.com/player/184254/guglielmo-vicario" },
@@ -1437,11 +1440,13 @@ function parseTransfermarktResults(html = "", seasonId = "") {
 }
 
 function sortResultItems(items = []) {
-  return [...items].sort(
-    (a, b) =>
-      String(b.sortKey || "").localeCompare(String(a.sortKey || "")) ||
-      String(a.competition || "").localeCompare(String(b.competition || "")),
-  );
+  const allScheduled = items.length > 0 && items.every((item) => item.outcome === "scheduled");
+  return [...items].sort((a, b) => {
+    const dateSort = allScheduled
+      ? String(a.sortKey || "").localeCompare(String(b.sortKey || ""))
+      : String(b.sortKey || "").localeCompare(String(a.sortKey || ""));
+    return dateSort || String(a.competition || "").localeCompare(String(b.competition || ""));
+  });
 }
 
 function summarizeResults(items = []) {
