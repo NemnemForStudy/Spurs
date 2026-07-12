@@ -1564,6 +1564,15 @@ async function fetchPayload(endpoint) {
   return payload;
 }
 
+async function fetchCommunityPayload(endpoint) {
+  const headers = communityState.ownerToken ? { "x-community-owner-token": communityState.ownerToken } : {};
+  const response = await fetch(endpoint, { cache: "no-store", headers });
+  if (!response.ok) throw new Error(`${endpoint} unavailable`);
+  const payload = await response.json();
+  writeCachedPayload(endpoint, payload);
+  return payload;
+}
+
 async function postJson(endpoint, body) {
   const response = await fetch(endpoint, {
     method: "POST",
@@ -1613,8 +1622,10 @@ function communityTargetKey(targetType, targetId) {
   return `${targetType}:${targetId}`;
 }
 
-function ownsCommunityTarget(targetType, targetId) {
-  return communityState.ownedTargets.has(communityTargetKey(targetType, targetId));
+function ownsCommunityTarget(targetType, target) {
+  const targetId = typeof target === "object" && target ? target.id : target;
+  const serverOwned = Boolean(typeof target === "object" && target?.ownedByMe);
+  return serverOwned || communityState.ownedTargets.has(communityTargetKey(targetType, targetId));
 }
 
 function markOwnedCommunityTarget(targetType, targetId) {
@@ -1755,7 +1766,7 @@ function boardLabel(boardId = "") {
 
 function communityActionButtons(targetType, item = {}) {
   const id = item.id || "";
-  const deleteButton = ownsCommunityTarget(targetType, id)
+  const deleteButton = ownsCommunityTarget(targetType, item)
     ? `<button type="button" class="danger-action" data-community-delete="${escapeHtml(targetType)}" data-target-id="${escapeHtml(id)}">삭제</button>`
     : "";
   return `
@@ -1877,7 +1888,7 @@ async function refreshCommunityDetail(postId) {
     return;
   }
   const endpoint = `/api/community-posts?team=${encodeURIComponent(communityState.teamId)}&post=${encodeURIComponent(postId)}`;
-  const payload = await fetchPayload(endpoint);
+  const payload = await fetchCommunityPayload(endpoint);
   const post = payload.items?.[0] || null;
   renderCommunityDetail(post);
 }
@@ -1889,7 +1900,7 @@ async function refreshCommunity() {
   if (params.get("post")) communityState.selectedId = params.get("post");
   const endpoint = `/api/community-posts?team=${encodeURIComponent(communityState.teamId)}&board=${encodeURIComponent(communityState.board)}`;
   try {
-    const payload = await fetchPayload(endpoint);
+    const payload = await fetchCommunityPayload(endpoint);
     communityState.payload = payload;
     communityState.items = payload.items || [];
     if (!communityState.selectedId && communityState.items[0]) communityState.selectedId = communityState.items[0].id;

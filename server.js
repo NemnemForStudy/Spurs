@@ -1738,7 +1738,7 @@ function countVotes(votes = [], targetType, targetId) {
     .reduce((sum, vote) => sum + Number(vote.value || 1), 0);
 }
 
-function publicCommunityComment(comment = {}, votes = []) {
+function publicCommunityComment(comment = {}, votes = [], viewerOwnerKey = "") {
   return {
     id: comment.id,
     postId: comment.postId,
@@ -1746,10 +1746,11 @@ function publicCommunityComment(comment = {}, votes = []) {
     body: comment.body || "",
     createdAt: comment.createdAt || comment.created_at || communityNow(),
     score: countVotes(votes, "comment", comment.id),
+    ownedByMe: Boolean(viewerOwnerKey && comment.ownerKey && viewerOwnerKey === comment.ownerKey),
   };
 }
 
-function publicCommunityPost(post = {}, comments = [], votes = [], includeComments = false) {
+function publicCommunityPost(post = {}, comments = [], votes = [], includeComments = false, viewerOwnerKey = "") {
   const postComments = comments
     .filter((comment) => comment.postId === post.id && !comment.hidden)
     .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
@@ -1765,7 +1766,8 @@ function publicCommunityPost(post = {}, comments = [], votes = [], includeCommen
     updatedAt: post.updatedAt || post.createdAt || communityNow(),
     score: countVotes(votes, "post", post.id),
     commentCount: postComments.length,
-    comments: includeComments ? postComments.map((comment) => publicCommunityComment(comment, votes)) : [],
+    ownedByMe: Boolean(viewerOwnerKey && post.ownerKey && viewerOwnerKey === post.ownerKey),
+    comments: includeComments ? postComments.map((comment) => publicCommunityComment(comment, votes, viewerOwnerKey)) : [],
   };
 }
 
@@ -1883,13 +1885,14 @@ async function readCommunityRows(options) {
   return { posts, comments, votes };
 }
 
-async function getCommunityPostsPayload({ teamId = "tottenham", board = "all", postId = "" } = {}) {
+async function getCommunityPostsPayload({ teamId = "tottenham", board = "all", postId = "", ownerToken = "" } = {}) {
   const team = await getTeamPayload(teamId);
   if (!team) return null;
   const normalizedBoard = board === "all" ? "all" : normalizeCommunityBoard(board);
   const rows = await readCommunityRows({ teamId: team.item.id, board: normalizedBoard, postId });
   const includeComments = Boolean(postId);
-  const items = rows.posts.map((post) => publicCommunityPost(post, rows.comments, rows.votes, includeComments));
+  const viewerOwnerKey = communityOwnerKey(ownerToken);
+  const items = rows.posts.map((post) => publicCommunityPost(post, rows.comments, rows.votes, includeComments, viewerOwnerKey));
   return {
     mode: "community-posts",
     refreshedAt: new Date().toISOString(),
@@ -1956,7 +1959,7 @@ async function createCommunityPost(request) {
     await writeLocalCommunityStore(store);
   }
 
-  const payload = await getCommunityPostsPayload({ teamId: post.teamId, postId: post.id });
+  const payload = await getCommunityPostsPayload({ teamId: post.teamId, postId: post.id, ownerToken: body.ownerToken });
   payload.createdPostId = post.id;
   return { status: 201, payload };
 }
@@ -2004,7 +2007,7 @@ async function createCommunityComment(request) {
     await writeLocalCommunityStore(store);
   }
 
-  const payload = await getCommunityPostsPayload({ teamId: post.teamId, postId });
+  const payload = await getCommunityPostsPayload({ teamId: post.teamId, postId, ownerToken: body.ownerToken });
   payload.createdCommentId = comment.id;
   return { status: 201, payload };
 }
@@ -3691,6 +3694,7 @@ async function handleRequest(request, response) {
         teamId: url.searchParams.get("team") || "tottenham",
         board: url.searchParams.get("board") || "all",
         postId: url.searchParams.get("post") || "",
+        ownerToken: request.headers["x-community-owner-token"] || "",
       });
       if (!payload) {
         sendJson(response, 404, { mode: "not-found", message: "팀을 찾지 못했습니다.", items: [] });
