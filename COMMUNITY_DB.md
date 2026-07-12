@@ -7,6 +7,7 @@
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+COMMUNITY_ADMIN_KEY=choose-a-private-moderation-key
 ```
 
 Supabase SQL Editor에서 `data/community-schema.sql` 내용을 실행하면 필요한 테이블이 만들어집니다.
@@ -17,7 +18,11 @@ Supabase SQL Editor에서 `data/community-schema.sql` 내용을 실행하면 필
 - `POST /api/community-posts`
 - `POST /api/community-comments`
 - `POST /api/community-votes`
+- `POST /api/community-reports`
+- `POST /api/community-delete`
 - `GET /api/analytics-summary`
 - `POST /api/analytics-event`
 
-서비스 롤 키는 브라우저에 노출하지 말고 Render 환경변수에만 저장하세요.
+서비스 롤 키와 `COMMUNITY_ADMIN_KEY`는 브라우저에 노출하지 말고 Render 환경변수에만 저장하세요.
+
+일반 사용자는 자신이 작성한 브라우저에서만 글/댓글을 삭제할 수 있습니다. 운영자가 직접 삭제해야 할 때는 서버 API에 `adminKey`를 넣어 삭제할 수 있습니다.

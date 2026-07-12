@@ -20,6 +20,7 @@ const crawlerUserAgent =
   `Mozilla/5.0 (compatible; SpursPulse/1.0; Tottenham fan dashboard; +${publicBaseUrl})`;
 const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+const communityAdminKey = process.env.COMMUNITY_ADMIN_KEY || "";
 const communityStorageFile = path.join(root, "data", "community-store.json");
 const analyticsStorageFile = path.join(root, "data", "analytics-store.json");
 
@@ -1400,9 +1401,10 @@ async function readLocalCommunityStore() {
       posts: Array.isArray(parsed.posts) ? parsed.posts : [],
       comments: Array.isArray(parsed.comments) ? parsed.comments : [],
       votes: Array.isArray(parsed.votes) ? parsed.votes : [],
+      reports: Array.isArray(parsed.reports) ? parsed.reports : [],
     };
   } catch {
-    return { posts: [], comments: [], votes: [] };
+    return { posts: [], comments: [], votes: [], reports: [] };
   }
 }
 
@@ -1711,6 +1713,25 @@ function communityVoterKey(request, targetType, targetId) {
     .digest("hex");
 }
 
+function communityOwnerKey(value = "") {
+  const token = cleanSingleLine(value, 200);
+  return token ? crypto.createHash("sha256").update(token).digest("hex") : "";
+}
+
+function isCommunityAdmin(value = "") {
+  if (!communityAdminKey) return false;
+  const provided = communityOwnerKey(value);
+  const expected = communityOwnerKey(communityAdminKey);
+  if (!provided || provided.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+}
+
+function canManageCommunityTarget(target = {}, body = {}) {
+  if (isCommunityAdmin(body.adminKey)) return true;
+  const ownerKey = communityOwnerKey(body.ownerToken);
+  return Boolean(ownerKey && target.ownerKey && ownerKey === target.ownerKey);
+}
+
 function countVotes(votes = [], targetType, targetId) {
   return votes
     .filter((vote) => vote.targetType === targetType && vote.targetId === targetId)
@@ -1757,6 +1778,7 @@ function dbPostToCommunity(row = {}) {
     title: row.title,
     body: row.body,
     hidden: row.hidden,
+    ownerKey: row.owner_key || "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1769,6 +1791,7 @@ function dbCommentToCommunity(row = {}) {
     author: row.author,
     body: row.body,
     hidden: row.hidden,
+    ownerKey: row.owner_key || "",
     createdAt: row.created_at,
   };
 }
@@ -1905,6 +1928,7 @@ async function createCommunityPost(request) {
     title,
     body: postBody,
     hidden: false,
+    ownerKey: communityOwnerKey(body.ownerToken),
     createdAt: now,
     updatedAt: now,
   };
@@ -1920,6 +1944,7 @@ async function createCommunityPost(request) {
         author: post.author,
         title: post.title,
         body: post.body,
+        owner_key: post.ownerKey,
         hidden: false,
         created_at: post.createdAt,
         updated_at: post.updatedAt,
@@ -1932,6 +1957,7 @@ async function createCommunityPost(request) {
   }
 
   const payload = await getCommunityPostsPayload({ teamId: post.teamId, postId: post.id });
+  payload.createdPostId = post.id;
   return { status: 201, payload };
 }
 
@@ -1954,6 +1980,7 @@ async function createCommunityComment(request) {
     author: normalizeCommunityAuthor(body.author),
     body: commentBody,
     hidden: false,
+    ownerKey: communityOwnerKey(body.ownerToken),
     createdAt: now,
   };
 
@@ -1966,6 +1993,7 @@ async function createCommunityComment(request) {
         post_id: comment.postId,
         author: comment.author,
         body: comment.body,
+        owner_key: comment.ownerKey,
         hidden: false,
         created_at: comment.createdAt,
       }),
@@ -1977,6 +2005,7 @@ async function createCommunityComment(request) {
   }
 
   const payload = await getCommunityPostsPayload({ teamId: post.teamId, postId });
+  payload.createdCommentId = comment.id;
   return { status: 201, payload };
 }
 
@@ -2024,6 +2053,120 @@ async function createCommunityVote(request) {
   }
 
   return { status: 200, payload: { mode: "community-vote", ok: true } };
+}
+
+async function findLocalCommunityTarget(store, targetType, targetId) {
+  if (targetType === "comment") {
+    return store.comments.find((comment) => comment.id === targetId && !comment.hidden) || null;
+  }
+  return store.posts.find((post) => post.id === targetId && !post.hidden) || null;
+}
+
+async function findSupabaseCommunityTarget(targetType, targetId) {
+  const table = targetType === "comment" ? "community_comments" : "community_posts";
+  const rows = await supabaseRequest(
+    `${table}?select=*&id=eq.${encodeURIComponent(targetId)}&hidden=eq.false&limit=1`,
+  );
+  const row = rows?.[0];
+  if (!row) return null;
+  return targetType === "comment" ? dbCommentToCommunity(row) : dbPostToCommunity(row);
+}
+
+async function createCommunityReport(request) {
+  const body = await readJsonBody(request);
+  const targetType = body.targetType === "comment" ? "comment" : "post";
+  const targetId = cleanSingleLine(body.targetId, 80);
+  const reason = cleanSingleLine(body.reason || "기타", 80) || "기타";
+  const details = cleanMultiline(body.details || "", 1000);
+  if (!targetId) return { status: 400, payload: { message: "신고 대상을 찾지 못했습니다." } };
+
+  const reporterKey = communityVoterKey(request, `report-${targetType}`, targetId);
+  if (hasSupabaseCommunityStore()) {
+    const target = await findSupabaseCommunityTarget(targetType, targetId);
+    if (!target) return { status: 404, payload: { message: "신고 대상을 찾지 못했습니다." } };
+    const existing = await supabaseRequest(
+      `community_reports?select=id&target_type=eq.${targetType}&target_id=eq.${encodeURIComponent(targetId)}&reporter_key=eq.${reporterKey}&limit=1`,
+    );
+    if (!existing?.length) {
+      await supabaseRequest("community_reports", {
+        method: "POST",
+        headers: { prefer: "return=minimal" },
+        body: JSON.stringify({
+          id: crypto.randomUUID(),
+          target_type: targetType,
+          target_id: targetId,
+          reason,
+          details,
+          reporter_key: reporterKey,
+          status: "open",
+          created_at: communityNow(),
+        }),
+      });
+    }
+    return { status: 200, payload: { mode: "community-report", ok: true, duplicate: Boolean(existing?.length) } };
+  }
+
+  const store = await readLocalCommunityStore();
+  const target = await findLocalCommunityTarget(store, targetType, targetId);
+  if (!target) return { status: 404, payload: { message: "신고 대상을 찾지 못했습니다." } };
+  const exists = store.reports.some(
+    (report) => report.targetType === targetType && report.targetId === targetId && report.reporterKey === reporterKey,
+  );
+  if (!exists) {
+    store.reports.push({
+      id: crypto.randomUUID(),
+      targetType,
+      targetId,
+      reason,
+      details,
+      reporterKey,
+      status: "open",
+      createdAt: communityNow(),
+    });
+    await writeLocalCommunityStore(store);
+  }
+  return { status: 200, payload: { mode: "community-report", ok: true, duplicate: exists } };
+}
+
+async function deleteCommunityTarget(request) {
+  const body = await readJsonBody(request);
+  const targetType = body.targetType === "comment" ? "comment" : "post";
+  const targetId = cleanSingleLine(body.targetId, 80);
+  if (!targetId) return { status: 400, payload: { message: "삭제 대상을 찾지 못했습니다." } };
+
+  if (hasSupabaseCommunityStore()) {
+    const target = await findSupabaseCommunityTarget(targetType, targetId);
+    if (!target) return { status: 404, payload: { message: "삭제 대상을 찾지 못했습니다." } };
+    if (!canManageCommunityTarget(target, body)) {
+      return { status: 403, payload: { message: "작성한 브라우저에서만 삭제할 수 있습니다." } };
+    }
+    const table = targetType === "comment" ? "community_comments" : "community_posts";
+    await supabaseRequest(`${table}?id=eq.${encodeURIComponent(targetId)}`, {
+      method: "PATCH",
+      headers: { prefer: "return=minimal" },
+      body: JSON.stringify({ hidden: true }),
+    });
+    return { status: 200, payload: { mode: "community-delete", ok: true, targetType, targetId } };
+  }
+
+  const store = await readLocalCommunityStore();
+  const target = await findLocalCommunityTarget(store, targetType, targetId);
+  if (!target) return { status: 404, payload: { message: "삭제 대상을 찾지 못했습니다." } };
+  if (!canManageCommunityTarget(target, body)) {
+    return { status: 403, payload: { message: "작성한 브라우저에서만 삭제할 수 있습니다." } };
+  }
+  target.hidden = true;
+  target.deletedAt = communityNow();
+  if (targetType === "post") {
+    store.comments.forEach((comment) => {
+      if (comment.postId === targetId) {
+        comment.hidden = true;
+        comment.deletedAt = target.deletedAt;
+      }
+    });
+  }
+  await writeLocalCommunityStore(store);
+  return { status: 200, payload: { mode: "community-delete", ok: true, targetType, targetId } };
 }
 
 async function getInjuryFeed(seasonId = "") {
@@ -3571,6 +3714,24 @@ async function handleRequest(request, response) {
         return;
       }
       const result = await createCommunityVote(request);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (url.pathname === "/api/community-reports") {
+      if (request.method !== "POST") {
+        sendText(response, 405, "Method not allowed", { allow: "POST" });
+        return;
+      }
+      const result = await createCommunityReport(request);
+      sendJson(response, result.status, result.payload);
+      return;
+    }
+    if (url.pathname === "/api/community-delete") {
+      if (request.method !== "POST") {
+        sendText(response, 405, "Method not allowed", { allow: "POST" });
+        return;
+      }
+      const result = await deleteCommunityTarget(request);
       sendJson(response, result.status, result.payload);
       return;
     }

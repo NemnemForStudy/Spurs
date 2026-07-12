@@ -2787,6 +2787,14 @@ textarea {
   gap: 10px;
 }
 
+.community-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .community-post h3 {
   margin: 10px 0 8px;
   font-size: 17px;
@@ -2813,6 +2821,14 @@ textarea {
   cursor: pointer;
 }
 
+.community-post button.danger-action,
+.community-detail-card button.danger-action,
+.community-comment button.danger-action {
+  color: var(--red);
+  background: #fff7f6;
+  border-color: rgba(192, 54, 44, 0.25);
+}
+
 .community-detail-card h2 {
   margin: 12px 0;
   font-size: 26px;
@@ -2837,6 +2853,76 @@ textarea {
 
 .comment-form {
   margin-top: 14px;
+}
+
+.report-modal[hidden] {
+  display: none;
+}
+
+.report-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 20, 44, 0.46);
+}
+
+.report-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(460px, 100%);
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.report-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.report-dialog h2 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 22px;
+}
+
+.report-dialog header button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--navy);
+  background: #f3f7fc;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.report-dialog label {
+  display: grid;
+  gap: 6px;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.report-dialog select,
+.report-dialog textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: #f8fbff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
 }
 
 @media (max-width: 920px) {

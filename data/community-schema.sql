@@ -5,10 +5,14 @@ create table if not exists public.community_posts (
   author text not null default '익명',
   title text not null,
   body text not null,
+  owner_key text,
   hidden boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.community_posts
+  add column if not exists owner_key text;
 
 create index if not exists community_posts_team_created_idx
   on public.community_posts (team_id, created_at desc);
@@ -21,9 +25,13 @@ create table if not exists public.community_comments (
   post_id uuid not null references public.community_posts(id) on delete cascade,
   author text not null default '익명',
   body text not null,
+  owner_key text,
   hidden boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table public.community_comments
+  add column if not exists owner_key text;
 
 create index if not exists community_comments_post_created_idx
   on public.community_comments (post_id, created_at asc);
@@ -40,6 +48,24 @@ create table if not exists public.community_votes (
 
 create index if not exists community_votes_target_idx
   on public.community_votes (target_type, target_id);
+
+create table if not exists public.community_reports (
+  id uuid primary key,
+  target_type text not null check (target_type in ('post', 'comment')),
+  target_id uuid not null,
+  reason text not null default '기타',
+  details text not null default '',
+  reporter_key text not null,
+  status text not null default 'open',
+  created_at timestamptz not null default now(),
+  unique (target_type, target_id, reporter_key)
+);
+
+create index if not exists community_reports_target_idx
+  on public.community_reports (target_type, target_id);
+
+create index if not exists community_reports_status_created_idx
+  on public.community_reports (status, created_at desc);
 
 create table if not exists public.site_analytics_events (
   id uuid primary key,

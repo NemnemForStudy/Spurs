@@ -66,6 +66,9 @@ const communityState = {
   items: [],
   selectedId: "",
   payload: null,
+  ownerToken: "",
+  ownedTargets: new Set(),
+  reportTarget: null,
 };
 
 const analyticsState = {
@@ -207,6 +210,12 @@ const communityElements = {
   commentAuthor: document.querySelector("#communityCommentAuthor"),
   commentBody: document.querySelector("#communityCommentBody"),
   analytics: document.querySelector("#communityAnalytics"),
+  reportModal: document.querySelector("#communityReportModal"),
+  reportForm: document.querySelector("#communityReportForm"),
+  reportTitle: document.querySelector("#communityReportTitle"),
+  reportReason: document.querySelector("#communityReportReason"),
+  reportDetails: document.querySelector("#communityReportDetails"),
+  reportCancel: document.querySelector("#communityReportCancel"),
 };
 
 const depthSlots = [
@@ -1589,6 +1598,44 @@ function initAnalyticsIdentity() {
   analyticsState.sessionId = getStoredClientId(sessionStorage, "spurs-pulse-session-id", "session");
 }
 
+const communityOwnedTargetsKey = "spurs-pulse-owned-community-targets";
+
+function initCommunityIdentity() {
+  communityState.ownerToken = getStoredClientId(localStorage, "spurs-pulse-community-owner-token", "owner");
+  try {
+    communityState.ownedTargets = new Set(JSON.parse(localStorage.getItem(communityOwnedTargetsKey) || "[]"));
+  } catch {
+    communityState.ownedTargets = new Set();
+  }
+}
+
+function communityTargetKey(targetType, targetId) {
+  return `${targetType}:${targetId}`;
+}
+
+function ownsCommunityTarget(targetType, targetId) {
+  return communityState.ownedTargets.has(communityTargetKey(targetType, targetId));
+}
+
+function markOwnedCommunityTarget(targetType, targetId) {
+  if (!targetId) return;
+  communityState.ownedTargets.add(communityTargetKey(targetType, targetId));
+  try {
+    localStorage.setItem(communityOwnedTargetsKey, JSON.stringify([...communityState.ownedTargets].slice(-500)));
+  } catch {
+    // Ownership is a local convenience; server verification still uses the token.
+  }
+}
+
+function unmarkOwnedCommunityTarget(targetType, targetId) {
+  communityState.ownedTargets.delete(communityTargetKey(targetType, targetId));
+  try {
+    localStorage.setItem(communityOwnedTargetsKey, JSON.stringify([...communityState.ownedTargets].slice(-500)));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 function analyticsPayload(type, extra = {}) {
   return {
     type,
@@ -1706,6 +1753,18 @@ function boardLabel(boardId = "") {
   return board?.label || "자유";
 }
 
+function communityActionButtons(targetType, item = {}) {
+  const id = item.id || "";
+  const deleteButton = ownsCommunityTarget(targetType, id)
+    ? `<button type="button" class="danger-action" data-community-delete="${escapeHtml(targetType)}" data-target-id="${escapeHtml(id)}">삭제</button>`
+    : "";
+  return `
+    <button type="button" data-community-vote="${escapeHtml(targetType)}" data-target-id="${escapeHtml(id)}">추천 ${Number(item.score || 0)}</button>
+    <button type="button" data-community-report="${escapeHtml(targetType)}" data-target-id="${escapeHtml(id)}">신고</button>
+    ${deleteButton}
+  `;
+}
+
 function renderCommunityBoards(boards = []) {
   if (!communityElements.boards) return;
   const allBoards = [{ id: "all", label: "전체" }, ...boards];
@@ -1741,8 +1800,10 @@ function renderCommunityPosts() {
           <p>${escapeHtml(communityExcerpt(post.body))}</p>
           <footer>
             <span>${escapeHtml(post.author || "익명")}</span>
-            <button type="button" data-community-vote="post" data-target-id="${escapeHtml(post.id)}">추천 ${Number(post.score || 0)}</button>
-            <span>댓글 ${Number(post.commentCount || 0)}</span>
+            <span class="community-actions">
+              ${communityActionButtons("post", post)}
+              <span>댓글 ${Number(post.commentCount || 0)}</span>
+            </span>
           </footer>
         </article>
       `,
@@ -1767,7 +1828,7 @@ function renderCommunityDetail(post = null) {
       <div class="community-body">${escapeHtml(post.body).replace(/\n/g, "<br />")}</div>
       <footer>
         <span>작성 ${escapeHtml(post.author || "익명")}</span>
-        <button type="button" data-community-vote="post" data-target-id="${escapeHtml(post.id)}">추천 ${Number(post.score || 0)}</button>
+        <span class="community-actions">${communityActionButtons("post", post)}</span>
       </footer>
     </article>
     <section class="community-comments" aria-label="댓글">
@@ -1781,7 +1842,7 @@ function renderCommunityDetail(post = null) {
                     <p>${escapeHtml(comment.body).replace(/\n/g, "<br />")}</p>
                     <footer>
                       <span>${escapeHtml(comment.author || "익명")} · ${escapeHtml(formatCommunityDate(comment.createdAt))}</span>
-                      <button type="button" data-community-vote="comment" data-target-id="${escapeHtml(comment.id)}">추천 ${Number(comment.score || 0)}</button>
+                      <span class="community-actions">${communityActionButtons("comment", comment)}</span>
                     </footer>
                   </article>
                 `,
@@ -1792,6 +1853,22 @@ function renderCommunityDetail(post = null) {
     </section>
   `;
   if (communityElements.commentForm) communityElements.commentForm.hidden = false;
+}
+
+function openCommunityReport(targetType, targetId) {
+  if (!communityElements.reportModal || !communityElements.reportForm) return;
+  communityState.reportTarget = { targetType, targetId };
+  if (communityElements.reportTitle) {
+    communityElements.reportTitle.textContent = targetType === "comment" ? "댓글 신고" : "게시글 신고";
+  }
+  if (communityElements.reportReason) communityElements.reportReason.value = "욕설/비방";
+  if (communityElements.reportDetails) communityElements.reportDetails.value = "";
+  communityElements.reportModal.hidden = false;
+}
+
+function closeCommunityReport() {
+  if (communityElements.reportModal) communityElements.reportModal.hidden = true;
+  communityState.reportTarget = null;
 }
 
 async function refreshCommunityDetail(postId) {
@@ -2068,8 +2145,8 @@ communityElements.boards?.addEventListener("click", (event) => {
 });
 
 communityElements.posts?.addEventListener("click", (event) => {
-  const voteButton = event.target.closest("[data-community-vote]");
-  if (voteButton) return;
+  const actionButton = event.target.closest("[data-community-vote],[data-community-report],[data-community-delete]");
+  if (actionButton) return;
   const post = event.target.closest("[data-community-post]");
   if (!post) return;
   communityState.selectedId = post.dataset.communityPost || "";
@@ -2078,11 +2155,31 @@ communityElements.posts?.addEventListener("click", (event) => {
 });
 
 communityElements.root?.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-community-vote]");
+  const button = event.target.closest("[data-community-vote],[data-community-report],[data-community-delete]");
   if (!button) return;
   event.preventDefault();
-  const targetType = button.dataset.communityVote || "post";
+  const targetType = button.dataset.communityVote || button.dataset.communityReport || button.dataset.communityDelete || "post";
   const targetId = button.dataset.targetId || "";
+  if (button.dataset.communityReport) {
+    openCommunityReport(targetType, targetId);
+    return;
+  }
+  if (button.dataset.communityDelete) {
+    const ok = window.confirm(targetType === "comment" ? "이 댓글을 삭제할까요?" : "이 게시글을 삭제할까요?");
+    if (!ok) return;
+    button.disabled = true;
+    try {
+      await postJson("/api/community-delete", { targetType, targetId, ownerToken: communityState.ownerToken });
+      unmarkOwnedCommunityTarget(targetType, targetId);
+      if (targetType === "post" && communityState.selectedId === targetId) communityState.selectedId = "";
+      await refreshCommunity();
+    } catch (error) {
+      if (communityElements.status) communityElements.status.textContent = error.message || "삭제 실패";
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
   button.disabled = true;
   try {
     await postJson("/api/community-votes", { targetType, targetId });
@@ -2105,9 +2202,11 @@ communityElements.form?.addEventListener("submit", async (event) => {
       author: communityElements.authorInput?.value || "",
       title: communityElements.titleInput?.value || "",
       body: communityElements.bodyInput?.value || "",
+      ownerToken: communityState.ownerToken,
     });
     const created = payload.items?.[0];
     communityState.selectedId = created?.id || "";
+    markOwnedCommunityTarget("post", created?.id || payload.createdPostId || "");
     if (communityElements.titleInput) communityElements.titleInput.value = "";
     if (communityElements.bodyInput) communityElements.bodyInput.value = "";
     await refreshCommunity();
@@ -2124,16 +2223,48 @@ communityElements.commentForm?.addEventListener("submit", async (event) => {
   const submitButton = communityElements.commentForm.querySelector("button[type='submit']");
   if (submitButton) submitButton.disabled = true;
   try {
-    await postJson("/api/community-comments", {
+    const payload = await postJson("/api/community-comments", {
       teamId: communityState.teamId,
       postId: communityState.selectedId,
       author: communityElements.commentAuthor?.value || "",
       body: communityElements.commentBody?.value || "",
+      ownerToken: communityState.ownerToken,
     });
+    markOwnedCommunityTarget("comment", payload.createdCommentId || "");
     if (communityElements.commentBody) communityElements.commentBody.value = "";
     await refreshCommunity();
   } catch (error) {
     if (communityElements.status) communityElements.status.textContent = error.message || "댓글 작성 실패";
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+});
+
+communityElements.reportCancel?.addEventListener("click", closeCommunityReport);
+
+communityElements.reportModal?.addEventListener("click", (event) => {
+  if (event.target === communityElements.reportModal) closeCommunityReport();
+});
+
+communityElements.reportForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const target = communityState.reportTarget;
+  if (!target) return;
+  const submitButton = communityElements.reportForm.querySelector("button[type='submit']");
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const payload = await postJson("/api/community-reports", {
+      targetType: target.targetType,
+      targetId: target.targetId,
+      reason: communityElements.reportReason?.value || "기타",
+      details: communityElements.reportDetails?.value || "",
+    });
+    closeCommunityReport();
+    if (communityElements.status) {
+      communityElements.status.textContent = payload.duplicate ? "이미 접수된 신고입니다." : "신고가 접수됐습니다.";
+    }
+  } catch (error) {
+    if (communityElements.status) communityElements.status.textContent = error.message || "신고 실패";
   } finally {
     if (submitButton) submitButton.disabled = false;
   }
@@ -2165,6 +2296,7 @@ window.addEventListener("resize", () => {
 
 markActiveNav();
 initAnalyticsIdentity();
+initCommunityIdentity();
 sendAnalytics("pageview");
 refreshVersionBadge();
 renderTicker();
