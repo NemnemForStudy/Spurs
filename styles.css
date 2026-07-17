@@ -1589,9 +1589,13 @@ textarea {
 }
 
 .squad-table .position-pill {
+  display: inline-block;
   justify-content: center;
-  max-width: 180px;
-  white-space: normal;
+  max-width: none;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  text-align: center;
+  white-space: pre;
   line-height: 1.35;
 }
 
@@ -1745,6 +1749,11 @@ textarea {
   line-height: 1.35;
 }
 
+.player-tags .position-code-tag {
+  white-space: pre;
+  text-align: center;
+}
+
 .player-summary {
   max-width: 720px;
   margin: 20px 0 0;
@@ -1795,6 +1804,7 @@ textarea {
   color: #07162f;
   font-size: 15px;
   line-height: 1.25;
+  white-space: pre-line;
 }
 
 .injury-page {

@@ -744,7 +744,7 @@ function renderSquadRows(items) {
             ${showEnglishName ? `<span class="squad-player-english">${escapeHtml(item.name)}</span>` : ""}
           </td>
           <td>
-            <span class="position-pill ${escapeHtml(item.positionGroup.toLowerCase())}">${escapeHtml(item.positionDetailLabel || item.positionLabel)}</span>
+            <span class="position-pill ${escapeHtml(item.positionGroup.toLowerCase())}">${escapeHtml(formatPositionDisplay(item.positionDetailLabel || item.positionLabel))}</span>
           </td>
           <td>${escapeHtml(displayNationality(item.nationality))}</td>
           <td><span class="status-pill ${item.status === "loan" ? "loan" : "first"}">${escapeHtml(item.statusLabel)}</span></td>
@@ -832,6 +832,28 @@ function displayFoot(value = "") {
   return value || "-";
 }
 
+function positionParts(value = "") {
+  return String(value || "")
+    .split(/\s*\/\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function formatPositionInline(value = "") {
+  const parts = positionParts(value);
+  return parts.length ? parts.join(" / ") : value || "-";
+}
+
+function formatPositionDisplay(value = "", perLine = 3) {
+  const parts = positionParts(value);
+  if (!parts.length) return value || "-";
+  const lines = [];
+  for (let index = 0; index < parts.length; index += perLine) {
+    lines.push(parts.slice(index, index + perLine).join(" / "));
+  }
+  return lines.join("\n");
+}
+
 function factRows(player) {
   const detail = player.detail || {};
   const possiblePositions =
@@ -843,8 +865,8 @@ function factRows(player) {
     "-";
   return [
     ["등번호", player.number || "-"],
-    ["포지션", possiblePositions],
-    ["주 포지션", detail.primaryPosition || player.positionLabel || player.position || "-"],
+    ["포지션", formatPositionDisplay(possiblePositions)],
+    ["주 포지션", formatPositionInline(detail.primaryPosition || player.positionLabel || player.position || "-")],
     ["국적", displayNationality(player.nationality)],
     ["상태", player.statusLabel || "-"],
     ["생년월일", formatIsoDate(detail.birthDate) || "-"],
@@ -869,7 +891,9 @@ function renderPlayerDetail(payload) {
   const transfermarktUrl = safeHttpUrl(player.detail?.transfermarktUrl || "");
   const koreanName = player.nameKo || player.name;
   const positionSummary = player.detail?.positionDetailLabel || player.positionDetailLabel || (player.depthRoles || []).join(" / ") || player.positionLabel || player.position;
-  const summary = `${koreanName}는 ${displayNationality(player.nationality)} 국적의 ${positionSummary} 자원입니다. 현재 상태는 ${player.statusLabel || "선수단"}이며, 상세 프로필은 공식/Transfermarkt/FotMob 데이터를 함께 참고합니다.`;
+  const positionInline = formatPositionInline(positionSummary);
+  const positionDisplay = formatPositionDisplay(positionSummary);
+  const summary = `${koreanName}는 ${displayNationality(player.nationality)} 국적의 ${positionInline} 자원입니다. 현재 상태는 ${player.statusLabel || "선수단"}이며, 상세 프로필은 공식/Transfermarkt/FotMob 데이터를 함께 참고합니다.`;
 
   document.title = `${koreanName} | Spurs Pulse`;
   playerDetailElement.innerHTML = `
@@ -883,7 +907,7 @@ function renderPlayerDetail(payload) {
         <p class="player-english-name">${escapeHtml(player.name)}</p>
         <div class="player-tags">
           <span>#${escapeHtml(player.number || "-")}</span>
-          <span>${escapeHtml(positionSummary)}</span>
+          <span class="position-code-tag">${escapeHtml(positionDisplay)}</span>
           <span>${escapeHtml(displayNationality(player.nationality))}</span>
           <span>${escapeHtml(player.statusLabel || "-")}</span>
         </div>
