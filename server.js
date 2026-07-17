@@ -341,6 +341,7 @@ let cafeHotFeedCache = {
 };
 
 const playerDetailCache = new Map();
+const fotmobPlayerDetailCache = new Map();
 
 const translationCache = new Map();
 
@@ -567,6 +568,7 @@ const fotmobPlayerProfiles = {
   "Conor Gallagher": { id: "966027", slug: "conor-gallagher" },
   "Pedro Porro": { id: "941573", slug: "pedro-porro" },
   "Djed Spence": { id: "894803", slug: "djed-spence" },
+  "Kota Takai": { id: "1308600", slug: "kota-takai" },
   "Wilson Odobert": { id: "1341387", slug: "wilson-odobert" },
   "Pape Matar Sarr": { id: "1107280", slug: "pape-sarr" },
   "Rodrigo Bentancur": { id: "620618", slug: "rodrigo-bentancur" },
@@ -580,6 +582,17 @@ const fotmobPlayerProfiles = {
   "Manor Solomon": { id: "822237", slug: "manor-solomon" },
   "Ashley Phillips": { id: "1290962", slug: "ashley-phillips" },
   "Dane Scarlett": { id: "1113753", slug: "dane-scarlett" },
+};
+
+const squadDetailOverrides = {
+  Souza: {
+    preferredFoot: "left",
+  },
+  "Yang Min-Hyeok": {
+    contractEndIso: "2030-06-30",
+    contractEnd: "2030년 6월 30일",
+    transfermarktUrl: "https://www.transfermarkt.com/min-hyeok-yang/profil/spieler/1004327",
+  },
 };
 
 const fotmobPrimaryPositionCodes = {
@@ -1118,6 +1131,60 @@ async function enrichSquadWithContractDetails(items = []) {
   });
 }
 
+async function mapWithConcurrency(items = [], limit = 6, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function enrichSquadWithFotMobDetails(items = []) {
+  const detailEntries = await mapWithConcurrency(items, 6, async (item) => {
+    const detail = await fetchFotMobPlayerDetail(item);
+    return [item.id, detail];
+  });
+  const details = new Map(detailEntries);
+
+  return items.map((item) => {
+    const detail = details.get(item.id) || {};
+    const positionCodes = detail.positionCodes?.length ? detail.positionCodes : item.depthRoles || [];
+    const primaryPosition = detail.primaryPosition || item.primaryPosition || "";
+    return {
+      ...item,
+      height: item.height || detail.height || "",
+      weight: item.weight || detail.weight || "",
+      preferredFoot: item.preferredFoot || detail.preferredFoot || "",
+      marketValue: item.marketValue || detail.marketValue || "",
+      contractEnd: item.contractEnd || detail.contractEnd || "",
+      fotmobUrl: detail.fotmobUrl || item.fotmobUrl || "",
+      primaryPosition,
+      positionDetailLabel: detail.positionCodes?.length ? detailedPositionLabel(positionCodes) : item.positionDetailLabel,
+      positionLabels: detail.positionLabels?.length ? detail.positionLabels : item.positionLabels || [],
+    };
+  });
+}
+
+function applySquadDetailOverrides(items = []) {
+  return items.map((item) => {
+    const override = squadDetailOverrides[item.name];
+    if (!override) return item;
+    return {
+      ...item,
+      contractEndIso: item.contractEndIso || override.contractEndIso || "",
+      contractEnd: item.contractEnd || override.contractEnd || "",
+      preferredFoot: item.preferredFoot || override.preferredFoot || "",
+      transfermarktUrl: item.transfermarktUrl || override.transfermarktUrl || "",
+    };
+  });
+}
+
 async function getSquadFeed() {
   if (squadFeedCache.payload && Date.now() < squadFeedCache.expiresAt) {
     return squadFeedCache.payload;
@@ -1137,6 +1204,8 @@ async function getSquadFeed() {
 
   items = items.filter((item) => !departedSquadNames.has(item.name));
   items = await enrichSquadWithContractDetails(items);
+  items = await enrichSquadWithFotMobDetails(items);
+  items = applySquadDetailOverrides(items);
 
   const payload = {
     mode: "squad",
@@ -1213,6 +1282,13 @@ function playerNameKey(value = "") {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function getFotMobProfile(name = "") {
+  if (fotmobPlayerProfiles[name]) return fotmobPlayerProfiles[name];
+  const key = playerNameKey(name);
+  const match = Object.entries(fotmobPlayerProfiles).find(([profileName]) => playerNameKey(profileName) === key);
+  return match?.[1] || null;
 }
 
 function parseMetricHeight(value = "") {
@@ -1320,8 +1396,8 @@ function parseTransfermarktSquadDetails(html = "") {
     const height = parseMetricHeight(cellValues.find((value) => /\d[,.]\d{2}\s*m/i.test(value)) || "");
     const preferredFoot = normalizeFoot(cellValues.find((value) => /^(left|right|both)$/i.test(value)) || "");
     const dates = [...row.matchAll(/\d{1,2}\/\d{1,2}\/\d{4}/g)].map((match) => match[0]);
-    const joinedIso = parseEuropeanDate(dates[1] || "");
-    const contractEndIso = parseEuropeanDate(dates[2] || "");
+    const joinedIso = parseEuropeanDate(dates.at(-2) || "");
+    const contractEndIso = parseEuropeanDate(dates.at(-1) || "");
 
     details.set(playerNameKey(name), {
       name,
@@ -1405,14 +1481,28 @@ function parseFotMobPlayerDetail(html = "", sourceUrl = "") {
 }
 
 async function fetchFotMobPlayerDetail(player) {
-  const profile = fotmobPlayerProfiles[player.name];
+  const profile = getFotMobProfile(player.name);
   if (!profile) return {};
-  const url = `https://www.fotmob.com/players/${profile.id}/${profile.slug}`;
-  try {
-    return parseFotMobPlayerDetail(await fetchText(url, { timeoutMs: 12_000 }), url);
-  } catch {
-    return { fotmobUrl: url };
+  const cacheKey = `${profile.id}-${profile.slug}`;
+  const cached = fotmobPlayerDetailCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.payload;
   }
+
+  const url = `https://www.fotmob.com/players/${profile.id}/${profile.slug}`;
+  let payload = {};
+  try {
+    payload = parseFotMobPlayerDetail(await fetchText(url, { timeoutMs: 12_000 }), url);
+  } catch {
+    payload = { fotmobUrl: url };
+  }
+
+  fotmobPlayerDetailCache.set(cacheKey, {
+    expiresAt: Date.now() + squadCacheTtlMs,
+    payload,
+  });
+
+  return payload;
 }
 
 function safeTottenhamProfileUrl(url = "") {
@@ -1427,7 +1517,7 @@ function safeTottenhamProfileUrl(url = "") {
 async function getPlayerDetail(id = "") {
   const squad = await getSquadFeed();
   const player = squad.items.find((item) => item.id === id);
-  if (!player || !safeTottenhamProfileUrl(player.profileUrl)) {
+  if (!player) {
     return null;
   }
 
@@ -1438,24 +1528,38 @@ async function getPlayerDetail(id = "") {
   }
 
   let detail = {};
+  let jsonLd = {};
+  let highLevel = {};
+  let keyInfo = {};
+  let hasOfficialBiography = false;
+  if (safeTottenhamProfileUrl(player.profileUrl)) {
+    try {
+      const html = await fetchText(player.profileUrl, { timeoutMs: 12_000 });
+      jsonLd = parsePlayerJsonLd(html);
+      highLevel = parseDetailBlocks(html, "w-hl-bio__detail");
+      keyInfo = parseDetailBlocks(html, "w-player-key-info__detail");
+      hasOfficialBiography = Boolean(parsePlayerBiography(html));
+    } catch {
+      jsonLd = {};
+      highLevel = {};
+      keyInfo = {};
+    }
+  }
+
   try {
-    const html = await fetchText(player.profileUrl, { timeoutMs: 12_000 });
-    const jsonLd = parsePlayerJsonLd(html);
-    const highLevel = parseDetailBlocks(html, "w-hl-bio__detail");
-    const keyInfo = parseDetailBlocks(html, "w-player-key-info__detail");
     const transfermarktDetails = await getTransfermarktSquadDetails();
     const transfermarktDetail = transfermarktDetails.get(playerNameKey(player.name)) || {};
     const fotmobDetail = await fetchFotMobPlayerDetail(player);
-    const joinedRaw = keyInfo.Joined || keyInfo.Debut?.match(/Joined\s+(.+)$/i)?.[1] || transfermarktDetail.joinedIso || "";
+    const joinedRaw = keyInfo.Joined || keyInfo.Debut?.match(/Joined\s+(.+)$/i)?.[1] || player.joinedIso || transfermarktDetail.joinedIso || "";
     const debutRaw = keyInfo.Debut?.replace(/\s*Joined\s+.+$/i, "") || "";
     const positionCodes = fotmobDetail.positionCodes?.length ? fotmobDetail.positionCodes : player.depthRoles || [];
     const positionDetailLabel = detailedPositionLabel(positionCodes);
-    const primaryPosition = fotmobDetail.primaryPosition || primaryPositionLabel(transfermarktDetail.mainPosition) || "";
+    const primaryPosition = fotmobDetail.primaryPosition || player.primaryPosition || primaryPositionLabel(transfermarktDetail.mainPosition) || "";
     detail = {
       birthDate: jsonLd.birthDate || "",
-      height: fotmobDetail.height || (jsonLd.height?.value ? `${jsonLd.height.value} cm` : highLevel.Height) || transfermarktDetail.height || "",
-      weight: fotmobDetail.weight || highLevel.Weight || "",
-      preferredFoot: fotmobDetail.preferredFoot || normalizeFoot(highLevel["Preferred Foot"] || keyInfo["Preferred Foot"] || transfermarktDetail.preferredFoot || ""),
+      height: fotmobDetail.height || player.height || (jsonLd.height?.value ? `${jsonLd.height.value} cm` : highLevel.Height) || transfermarktDetail.height || "",
+      weight: fotmobDetail.weight || player.weight || highLevel.Weight || "",
+      preferredFoot: fotmobDetail.preferredFoot || player.preferredFoot || normalizeFoot(highLevel["Preferred Foot"] || keyInfo["Preferred Foot"] || transfermarktDetail.preferredFoot || ""),
       age: highLevel.Age || keyInfo.Age || "",
       joinedIso: parseLooseDate(joinedRaw),
       joined: formatKoreanDate(joinedRaw),
@@ -1465,15 +1569,28 @@ async function getPlayerDetail(id = "") {
       primaryPosition,
       positionCodes,
       positionDetailLabel,
-      positionLabels: fotmobDetail.positionLabels || [],
-      marketValue: fotmobDetail.marketValue || "",
+      positionLabels: fotmobDetail.positionLabels || player.positionLabels || [],
+      marketValue: fotmobDetail.marketValue || player.marketValue || "",
       contractEnd: fotmobDetail.contractEnd || player.contractEnd || transfermarktDetail.contractEnd || "",
       transfermarktUrl: player.transfermarktUrl || transfermarktDetail.transfermarktUrl || "",
       fotmobUrl: fotmobDetail.fotmobUrl || "",
-      hasOfficialBiography: Boolean(parsePlayerBiography(html)),
+      hasOfficialBiography,
     };
   } catch {
-    detail = {};
+    detail = {
+      height: player.height || "",
+      weight: player.weight || "",
+      preferredFoot: player.preferredFoot || "",
+      primaryPosition: player.primaryPosition || "",
+      positionCodes: player.depthRoles || [],
+      positionDetailLabel: player.positionDetailLabel || "",
+      positionLabels: player.positionLabels || [],
+      marketValue: player.marketValue || "",
+      contractEnd: player.contractEnd || "",
+      transfermarktUrl: player.transfermarktUrl || "",
+      fotmobUrl: player.fotmobUrl || "",
+      hasOfficialBiography,
+    };
   }
 
   const payload = {
