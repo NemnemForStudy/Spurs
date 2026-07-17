@@ -330,6 +330,11 @@ let worldCupFeedCache = {
   payload: null,
 };
 
+let transfermarktSquadDetailCache = {
+  expiresAt: 0,
+  payload: new Map(),
+};
+
 let cafeHotFeedCache = {
   expiresAt: 0,
   payload: null,
@@ -401,6 +406,11 @@ const injurySource = {
 const resultSource = {
   label: "Transfermarkt",
   baseUrl: "https://www.transfermarkt.com/tottenham-hotspur/spielplan/verein/148/saison_id/",
+};
+
+const transfermarktSquadSource = {
+  label: "Transfermarkt",
+  url: "https://www.transfermarkt.com/tottenham-hotspur/kader/verein/148/plus/1",
 };
 
 const worldCupSource = {
@@ -537,6 +547,82 @@ const squadDepthRoles = {
   "Alejo Veliz": ["ST"],
   "Dane Scarlett": ["ST"],
   "Alfie Devine": ["CM", "AM"],
+};
+
+const fotmobPlayerProfiles = {
+  "Guglielmo Vicario": { id: "538501", slug: "guglielmo-vicario" },
+  "Radu Drăgușin": { id: "1203661", slug: "radu-dragusin" },
+  "Kevin Danso": { id: "754126", slug: "kevin-danso" },
+  "Xavi Simons": { id: "1173787", slug: "xavi-simons" },
+  Richarlison: { id: "654908", slug: "richarlison" },
+  "James Maddison": { id: "493165", slug: "james-maddison" },
+  "Mathys Tel": { id: "1288111", slug: "mathys-tel" },
+  "Destiny Udogie": { id: "1052898", slug: "destiny-udogie" },
+  "Archie Gray": { id: "1323305", slug: "archie-gray" },
+  "Lucas Bergvall": { id: "1386775", slug: "lucas-bergvall" },
+  "Cristian Romero": { id: "789066", slug: "cristian-romero" },
+  "Dominic Solanke": { id: "591734", slug: "dominic-solanke" },
+  "Mohammed Kudus": { id: "891743", slug: "mohammed-kudus" },
+  "Dejan Kulusevski": { id: "935379", slug: "dejan-kulusevski" },
+  "Conor Gallagher": { id: "966027", slug: "conor-gallagher" },
+  "Pedro Porro": { id: "941573", slug: "pedro-porro" },
+  "Djed Spence": { id: "894803", slug: "djed-spence" },
+  "Wilson Odobert": { id: "1341387", slug: "wilson-odobert" },
+  "Pape Matar Sarr": { id: "1107280", slug: "pape-sarr" },
+  "Rodrigo Bentancur": { id: "620618", slug: "rodrigo-bentancur" },
+  "Antonin Kinsky": { id: "1341475", slug: "antonin-kinsky" },
+  "Ben Davies": { id: "276121", slug: "ben-davies" },
+  "Micky van de Ven": { id: "1097466", slug: "micky-van-de-ven" },
+  Souza: { id: "1636513", slug: "souza" },
+  "Brandon Austin": { id: "862993", slug: "brandon-austin" },
+  "Luka Vuskovic": { id: "1413996", slug: "luka-vuskovic" },
+  "Yang Min-Hyeok": { id: "1609329", slug: "min-hyeok-yang" },
+  "Manor Solomon": { id: "822237", slug: "manor-solomon" },
+  "Ashley Phillips": { id: "1290962", slug: "ashley-phillips" },
+  "Dane Scarlett": { id: "1113753", slug: "dane-scarlett" },
+};
+
+const detailedPositionLabels = {
+  GK: "GK 골키퍼",
+  CB: "CB 센터백",
+  LB: "LB 레프트백",
+  RB: "RB 라이트백",
+  LWB: "LWB 왼쪽 윙백",
+  RWB: "RWB 오른쪽 윙백",
+  DM: "DM 수비형 미드필더",
+  CM: "CM 중앙 미드필더",
+  AM: "AM 공격형 미드필더",
+  LM: "LM 왼쪽 미드필더",
+  RM: "RM 오른쪽 미드필더",
+  LW: "LW 왼쪽 윙어",
+  RW: "RW 오른쪽 윙어",
+  ST: "ST 스트라이커",
+  CF: "CF 센터 포워드",
+};
+
+const fotmobPrimaryPositionCodes = {
+  keeper: "GK",
+  goalkeeper: "GK",
+  "centre back": "CB",
+  "center back": "CB",
+  defender: "CB",
+  "left back": "LB",
+  "right back": "RB",
+  "left wing back": "LWB",
+  "right wing back": "RWB",
+  "defensive midfielder": "DM",
+  "central midfielder": "CM",
+  midfielder: "CM",
+  "attacking midfielder": "AM",
+  "left midfielder": "LM",
+  "right midfielder": "RM",
+  "left winger": "LW",
+  "right winger": "RW",
+  winger: "RW",
+  striker: "ST",
+  forward: "ST",
+  "centre forward": "CF",
+  "center forward": "CF",
 };
 
 const injuryTranslations = [
@@ -915,6 +1001,22 @@ function playerPositionLabel(position = "") {
   return position || "기타";
 }
 
+function detailedPositionLabel(roles = []) {
+  return roles
+    .map((role) => detailedPositionLabels[role] || role)
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function primaryPositionCode(value = "") {
+  return fotmobPrimaryPositionCodes[String(value || "").trim().toLowerCase()] || "";
+}
+
+function primaryPositionLabel(value = "", code = "") {
+  const resolvedCode = code || primaryPositionCode(value);
+  return detailedPositionLabels[resolvedCode] || decodeHtml(value).trim();
+}
+
 function extractSquadImageUrl(card = "") {
   const resourceImages = [
     ...card.matchAll(/https:\/\/resources\.thfc\.pulselive\.com\/photo-resources\/[^"',<>\s]+/gi),
@@ -947,6 +1049,7 @@ function normalizeSquadPlayer(player, index) {
   const profileUrl = absoluteUrl(player.profileUrl || "", squadSource.url);
   const imageUrl = absoluteUrl(player.imageUrl || "", squadSource.url);
   const safeImageUrl = isAllowedSquadImageUrl(imageUrl) ? squadThumbnailUrl(imageUrl) : "";
+  const depthRoles = squadDepthRoles[name] || [playerPositionGroup(position)];
   const normalized = {
     id: `${status}-${stripTags(player.number || "no-number")}-${stripTags(player.name || `player-${index}`)}`
       .toLowerCase()
@@ -958,7 +1061,8 @@ function normalizeSquadPlayer(player, index) {
     position,
     positionGroup: playerPositionGroup(position),
     positionLabel: playerPositionLabel(position),
-    depthRoles: squadDepthRoles[name] || [playerPositionGroup(position)],
+    depthRoles,
+    positionDetailLabel: detailedPositionLabel(depthRoles),
     nationality: stripTags(player.nationality || ""),
     status,
     statusLabel: status === "loan" ? "임대 중" : "1군",
@@ -1102,6 +1206,213 @@ function parsePlayerBiography(html = "") {
   return paragraphs.join("\n\n");
 }
 
+function playerNameKey(value = "") {
+  return decodeHtml(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseMetricHeight(value = "") {
+  const metric = String(value).match(/(\d)[,.](\d{2})\s*m/i);
+  if (metric) return `${Number(metric[1]) * 100 + Number(metric[2])} cm`;
+  const cm = String(value).match(/(\d{3})\s*cm/i);
+  return cm ? `${cm[1]} cm` : String(value || "").trim();
+}
+
+function parseEuropeanDate(value = "") {
+  const match = String(value).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!match) return "";
+  const [, day, month, year] = match;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function parseLooseDate(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+
+  const european = parseEuropeanDate(raw);
+  if (european) return european;
+
+  const monthMap = {
+    jan: "01",
+    january: "01",
+    feb: "02",
+    february: "02",
+    mar: "03",
+    march: "03",
+    apr: "04",
+    april: "04",
+    may: "05",
+    jun: "06",
+    june: "06",
+    jul: "07",
+    july: "07",
+    aug: "08",
+    august: "08",
+    sep: "09",
+    sept: "09",
+    september: "09",
+    oct: "10",
+    october: "10",
+    nov: "11",
+    november: "11",
+    dec: "12",
+    december: "12",
+  };
+  const english = raw.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+  if (english) {
+    const [, day, month, year] = english;
+    const monthNumber = monthMap[month.toLowerCase()];
+    if (monthNumber) return `${year}-${monthNumber}-${day.padStart(2, "0")}`;
+  }
+
+  return "";
+}
+
+function formatKoreanDate(value = "") {
+  const iso = parseLooseDate(value);
+  if (!iso) return String(value || "").trim();
+  const [year, month, day] = iso.split("-");
+  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`;
+}
+
+function normalizeFoot(value = "") {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.includes("both")) return "both";
+  if (raw.includes("left")) return "left";
+  if (raw.includes("right")) return "right";
+  return raw;
+}
+
+function extractNextData(html = "") {
+  const match = html.match(/<script id=["']__NEXT_DATA__["'] type=["']application\/json["']>([\s\S]*?)<\/script>/i);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+function parseTransfermarktSquadDetails(html = "") {
+  const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((match) => match[1]);
+  const details = new Map();
+
+  rows.forEach((row) => {
+    const profile = row.match(/<a href="([^"]+\/profil\/spieler\/\d+)">\s*([^<]+?)\s*<\/a>/i);
+    if (!profile) return;
+
+    const [, profilePath, rawName] = profile;
+    const name = decodeHtml(stripTags(rawName));
+    const inlineTable = row.match(/<table class="inline-table">([\s\S]*?)<\/table>/i)?.[1] || "";
+    const inlineValues = [...inlineTable.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
+      .map((cell) => stripTags(cell[1]))
+      .filter(Boolean);
+    const mainPosition = inlineValues[inlineValues.length - 1] || "";
+    const cellValues = [...row.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)]
+      .map((cell) => stripTags(cell[1]))
+      .filter(Boolean);
+    const height = parseMetricHeight(cellValues.find((value) => /\d[,.]\d{2}\s*m/i.test(value)) || "");
+    const preferredFoot = normalizeFoot(cellValues.find((value) => /^(left|right|both)$/i.test(value)) || "");
+    const dates = [...row.matchAll(/\d{1,2}\/\d{1,2}\/\d{4}/g)].map((match) => match[0]);
+    const joinedIso = parseEuropeanDate(dates[1] || "");
+
+    details.set(playerNameKey(name), {
+      name,
+      mainPosition,
+      height,
+      preferredFoot,
+      joinedIso,
+      joined: formatKoreanDate(joinedIso),
+      transfermarktUrl: absoluteUrl(profilePath, "https://www.transfermarkt.com"),
+    });
+  });
+
+  return details;
+}
+
+async function getTransfermarktSquadDetails() {
+  if (transfermarktSquadDetailCache.payload && Date.now() < transfermarktSquadDetailCache.expiresAt) {
+    return transfermarktSquadDetailCache.payload;
+  }
+
+  let payload = new Map();
+  try {
+    payload = parseTransfermarktSquadDetails(await fetchText(transfermarktSquadSource.url, { timeoutMs: 12_000 }));
+  } catch {
+    payload = new Map();
+  }
+
+  transfermarktSquadDetailCache = {
+    expiresAt: Date.now() + squadCacheTtlMs,
+    payload,
+  };
+
+  return payload;
+}
+
+function infoFallback(infoItems = [], title = "") {
+  const item = infoItems.find((entry) => String(entry.title || "").toLowerCase() === title.toLowerCase());
+  const value = item?.value;
+  if (!value) return "";
+  if (typeof value.fallback === "string" || typeof value.fallback === "number") return String(value.fallback);
+  if (value.dateValue) return value.dateValue;
+  if (value.numberValue) return String(value.numberValue);
+  return "";
+}
+
+function parseFotMobPlayerDetail(html = "", sourceUrl = "") {
+  const data = extractNextData(html)?.props?.pageProps?.data;
+  if (!data) return {};
+
+  const infoItems = data.playerInformation || [];
+  const jsonLd = data.meta?.personJSONLD || {};
+  const heightValue = jsonLd.height?.value ? `${jsonLd.height.value} ${jsonLd.height.unitText || "cm"}` : infoFallback(infoItems, "Height");
+  const weightValue = jsonLd.weight?.value ? `${jsonLd.weight.value} ${jsonLd.weight.unitText || "kg"}` : "";
+  const positions = (data.positionDescription?.positions || [])
+    .map((position) => ({
+      code: position.strPosShort?.label || "",
+      label: position.strPos?.label || "",
+      main: Boolean(position.isMainPosition),
+    }))
+    .filter((position) => position.code || position.label);
+  const mainPosition = positions.find((position) => position.main) || {};
+  const rawPrimaryPosition = data.positionDescription?.primaryPosition?.label || mainPosition.label || "";
+  const rawPrimaryCode = mainPosition.code || primaryPositionCode(rawPrimaryPosition);
+  const positionCodes = [...new Set(positions.map((position) => position.code).filter(Boolean))];
+  const positionLabels = [...new Set(positions.map((position) => position.label).filter(Boolean))];
+
+  return {
+    height: parseMetricHeight(heightValue),
+    weight: weightValue,
+    preferredFoot: normalizeFoot(infoFallback(infoItems, "Preferred foot")),
+    marketValue: infoFallback(infoItems, "Market value"),
+    contractEnd: formatKoreanDate(infoFallback(infoItems, "Contract end")),
+    primaryPosition: primaryPositionLabel(rawPrimaryPosition, rawPrimaryCode),
+    primaryPositionCode: rawPrimaryCode,
+    positionCodes,
+    positionLabels,
+    fotmobUrl: sourceUrl,
+  };
+}
+
+async function fetchFotMobPlayerDetail(player) {
+  const profile = fotmobPlayerProfiles[player.name];
+  if (!profile) return {};
+  const url = `https://www.fotmob.com/players/${profile.id}/${profile.slug}`;
+  try {
+    return parseFotMobPlayerDetail(await fetchText(url, { timeoutMs: 12_000 }), url);
+  } catch {
+    return { fotmobUrl: url };
+  }
+}
+
 function safeTottenhamProfileUrl(url = "") {
   try {
     const parsed = new URL(url);
@@ -1130,15 +1441,33 @@ async function getPlayerDetail(id = "") {
     const jsonLd = parsePlayerJsonLd(html);
     const highLevel = parseDetailBlocks(html, "w-hl-bio__detail");
     const keyInfo = parseDetailBlocks(html, "w-player-key-info__detail");
+    const transfermarktDetails = await getTransfermarktSquadDetails();
+    const transfermarktDetail = transfermarktDetails.get(playerNameKey(player.name)) || {};
+    const fotmobDetail = await fetchFotMobPlayerDetail(player);
+    const joinedRaw = keyInfo.Joined || keyInfo.Debut?.match(/Joined\s+(.+)$/i)?.[1] || transfermarktDetail.joinedIso || "";
+    const debutRaw = keyInfo.Debut?.replace(/\s*Joined\s+.+$/i, "") || "";
+    const positionCodes = fotmobDetail.positionCodes?.length ? fotmobDetail.positionCodes : player.depthRoles || [];
+    const positionDetailLabel = detailedPositionLabel(positionCodes);
+    const primaryPosition = fotmobDetail.primaryPosition || primaryPositionLabel(transfermarktDetail.mainPosition) || "";
     detail = {
       birthDate: jsonLd.birthDate || "",
-      height: jsonLd.height?.value ? `${jsonLd.height.value} cm` : highLevel.Height || "",
-      weight: highLevel.Weight || "",
-      preferredFoot: highLevel["Preferred Foot"] || keyInfo["Preferred Foot"] || "",
+      height: fotmobDetail.height || (jsonLd.height?.value ? `${jsonLd.height.value} cm` : highLevel.Height) || transfermarktDetail.height || "",
+      weight: fotmobDetail.weight || highLevel.Weight || "",
+      preferredFoot: fotmobDetail.preferredFoot || normalizeFoot(highLevel["Preferred Foot"] || keyInfo["Preferred Foot"] || transfermarktDetail.preferredFoot || ""),
       age: highLevel.Age || keyInfo.Age || "",
-      joined: keyInfo.Joined || keyInfo.Debut?.match(/Joined\s+(.+)$/i)?.[1] || "",
-      debut: keyInfo.Debut?.replace(/\s*Joined\s+.+$/i, "") || "",
+      joinedIso: parseLooseDate(joinedRaw),
+      joined: formatKoreanDate(joinedRaw),
+      debutIso: parseLooseDate(debutRaw),
+      debut: formatKoreanDate(debutRaw),
       legacyNumber: keyInfo["Legacy Number"] || "",
+      primaryPosition,
+      positionCodes,
+      positionDetailLabel,
+      positionLabels: fotmobDetail.positionLabels || [],
+      marketValue: fotmobDetail.marketValue || "",
+      contractEnd: fotmobDetail.contractEnd || "",
+      transfermarktUrl: transfermarktDetail.transfermarktUrl || "",
+      fotmobUrl: fotmobDetail.fotmobUrl || "",
       hasOfficialBiography: Boolean(parsePlayerBiography(html)),
     };
   } catch {

@@ -700,6 +700,8 @@ function filteredSquadItems() {
       item.number,
       item.position,
       item.positionLabel,
+      item.positionDetailLabel,
+      ...(item.depthRoles || []),
       item.nationality,
       displayNationality(item.nationality),
       item.statusLabel,
@@ -742,7 +744,7 @@ function renderSquadRows(items) {
             ${showEnglishName ? `<span class="squad-player-english">${escapeHtml(item.name)}</span>` : ""}
           </td>
           <td>
-            <span class="position-pill ${escapeHtml(item.positionGroup.toLowerCase())}">${escapeHtml(item.positionLabel)}</span>
+            <span class="position-pill ${escapeHtml(item.positionGroup.toLowerCase())}">${escapeHtml(item.positionDetailLabel || item.positionLabel)}</span>
           </td>
           <td>${escapeHtml(displayNationality(item.nationality))}</td>
           <td><span class="status-pill ${item.status === "loan" ? "loan" : "first"}">${escapeHtml(item.statusLabel)}</span></td>
@@ -832,9 +834,17 @@ function displayFoot(value = "") {
 
 function factRows(player) {
   const detail = player.detail || {};
+  const possiblePositions =
+    detail.positionDetailLabel ||
+    player.positionDetailLabel ||
+    (player.depthRoles || []).join(" / ") ||
+    player.positionLabel ||
+    player.position ||
+    "-";
   return [
     ["등번호", player.number || "-"],
-    ["포지션", player.positionLabel || player.position || "-"],
+    ["포지션", possiblePositions],
+    ["주 포지션", detail.primaryPosition || player.positionLabel || player.position || "-"],
     ["국적", displayNationality(player.nationality)],
     ["상태", player.statusLabel || "-"],
     ["생년월일", formatIsoDate(detail.birthDate) || "-"],
@@ -844,6 +854,8 @@ function factRows(player) {
     ["주발", displayFoot(detail.preferredFoot)],
     ["입단일", detail.joined || "-"],
     ["데뷔", detail.debut || "-"],
+    ["계약 만료", detail.contractEnd || "-"],
+    ["시장가치", detail.marketValue || "-"],
     ["레거시 번호", detail.legacyNumber || "-"],
   ];
 }
@@ -853,8 +865,11 @@ function renderPlayerDetail(payload) {
   const player = payload.player;
   const imageUrl = proxiedImageUrl(player.imageUrl);
   const officialUrl = safeHttpUrl(player.profileUrl);
+  const fotmobUrl = safeHttpUrl(player.detail?.fotmobUrl || "");
+  const transfermarktUrl = safeHttpUrl(player.detail?.transfermarktUrl || "");
   const koreanName = player.nameKo || player.name;
-  const summary = `${koreanName}는 ${displayNationality(player.nationality)} 국적의 ${player.positionLabel || player.position}입니다. 현재 상태는 ${player.statusLabel || "선수단"}이며, 포지션 뎁스차트에서는 ${(player.depthRoles || []).join(", ") || player.positionGroup}로 분류됩니다.`;
+  const positionSummary = player.detail?.positionDetailLabel || player.positionDetailLabel || (player.depthRoles || []).join(" / ") || player.positionLabel || player.position;
+  const summary = `${koreanName}는 ${displayNationality(player.nationality)} 국적의 ${positionSummary} 자원입니다. 현재 상태는 ${player.statusLabel || "선수단"}이며, 상세 프로필은 공식/Transfermarkt/FotMob 데이터를 함께 참고합니다.`;
 
   document.title = `${koreanName} | Spurs Pulse`;
   playerDetailElement.innerHTML = `
@@ -868,7 +883,7 @@ function renderPlayerDetail(payload) {
         <p class="player-english-name">${escapeHtml(player.name)}</p>
         <div class="player-tags">
           <span>#${escapeHtml(player.number || "-")}</span>
-          <span>${escapeHtml(player.positionLabel || player.position)}</span>
+          <span>${escapeHtml(positionSummary)}</span>
           <span>${escapeHtml(displayNationality(player.nationality))}</span>
           <span>${escapeHtml(player.statusLabel || "-")}</span>
         </div>
@@ -876,6 +891,8 @@ function renderPlayerDetail(payload) {
         <div class="player-actions">
           <a class="source-link" href="./players.html">선수단</a>
           ${officialUrl ? `<a class="source-link secondary" href="${escapeHtml(officialUrl)}" target="_blank" rel="noopener noreferrer">공식 프로필</a>` : ""}
+          ${fotmobUrl ? `<a class="source-link secondary" href="${escapeHtml(fotmobUrl)}" target="_blank" rel="noopener noreferrer">FotMob</a>` : ""}
+          ${transfermarktUrl ? `<a class="source-link secondary" href="${escapeHtml(transfermarktUrl)}" target="_blank" rel="noopener noreferrer">Transfermarkt</a>` : ""}
         </div>
       </div>
     </article>
