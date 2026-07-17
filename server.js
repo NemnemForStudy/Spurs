@@ -582,24 +582,6 @@ const fotmobPlayerProfiles = {
   "Dane Scarlett": { id: "1113753", slug: "dane-scarlett" },
 };
 
-const detailedPositionLabels = {
-  GK: "GK 골키퍼",
-  CB: "CB 센터백",
-  LB: "LB 레프트백",
-  RB: "RB 라이트백",
-  LWB: "LWB 왼쪽 윙백",
-  RWB: "RWB 오른쪽 윙백",
-  DM: "DM 수비형 미드필더",
-  CM: "CM 중앙 미드필더",
-  AM: "AM 공격형 미드필더",
-  LM: "LM 왼쪽 미드필더",
-  RM: "RM 오른쪽 미드필더",
-  LW: "LW 왼쪽 윙어",
-  RW: "RW 오른쪽 윙어",
-  ST: "ST 스트라이커",
-  CF: "CF 센터 포워드",
-};
-
 const fotmobPrimaryPositionCodes = {
   keeper: "GK",
   goalkeeper: "GK",
@@ -1002,8 +984,8 @@ function playerPositionLabel(position = "") {
 }
 
 function detailedPositionLabel(roles = []) {
-  return roles
-    .map((role) => detailedPositionLabels[role] || role)
+  return [...new Set(roles)]
+    .map((role) => String(role || "").trim().toUpperCase())
     .filter(Boolean)
     .join(" / ");
 }
@@ -1014,7 +996,7 @@ function primaryPositionCode(value = "") {
 
 function primaryPositionLabel(value = "", code = "") {
   const resolvedCode = code || primaryPositionCode(value);
-  return detailedPositionLabels[resolvedCode] || decodeHtml(value).trim();
+  return resolvedCode || decodeHtml(value).trim();
 }
 
 function extractSquadImageUrl(card = "") {
