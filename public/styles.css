@@ -1472,7 +1472,7 @@ textarea {
 
 .squad-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 940px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1512,7 +1512,7 @@ textarea {
 
 .squad-table th:nth-child(3),
 .squad-table td:nth-child(3) {
-  width: 32%;
+  width: 28%;
 }
 
 .squad-table th:nth-child(4),
@@ -1520,8 +1520,22 @@ textarea {
 .squad-table th:nth-child(6),
 .squad-table td:nth-child(6),
 .squad-table th:nth-child(7),
-.squad-table td:nth-child(7) {
+.squad-table td:nth-child(7),
+.squad-table th:nth-child(8),
+.squad-table td:nth-child(8) {
   width: 120px;
+}
+
+.squad-table th:nth-child(5),
+.squad-table td:nth-child(5) {
+  width: 130px;
+}
+
+.squad-contract {
+  color: #31425f;
+  font-size: 13px;
+  font-weight: 850;
+  white-space: nowrap;
 }
 
 .squad-photo {

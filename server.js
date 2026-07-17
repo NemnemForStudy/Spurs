@@ -1102,6 +1102,22 @@ function summarizeSquad(items) {
   };
 }
 
+async function enrichSquadWithContractDetails(items = []) {
+  const details = await getTransfermarktSquadDetails();
+  if (!details?.size) return items;
+
+  return items.map((item) => {
+    const detail = details.get(playerNameKey(item.name));
+    if (!detail) return item;
+    return {
+      ...item,
+      contractEndIso: detail.contractEndIso || "",
+      contractEnd: detail.contractEnd || "",
+      transfermarktUrl: detail.transfermarktUrl || "",
+    };
+  });
+}
+
 async function getSquadFeed() {
   if (squadFeedCache.payload && Date.now() < squadFeedCache.expiresAt) {
     return squadFeedCache.payload;
@@ -1120,6 +1136,7 @@ async function getSquadFeed() {
   }
 
   items = items.filter((item) => !departedSquadNames.has(item.name));
+  items = await enrichSquadWithContractDetails(items);
 
   const payload = {
     mode: "squad",
@@ -1283,7 +1300,7 @@ function extractNextData(html = "") {
 }
 
 function parseTransfermarktSquadDetails(html = "") {
-  const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((match) => match[1]);
+  const rows = [...html.matchAll(/<tr class="(?:odd|even)">([\s\S]*?)(?=<tr class="(?:odd|even)">|<\/tbody>)/gi)].map((match) => match[1]);
   const details = new Map();
 
   rows.forEach((row) => {
@@ -1304,6 +1321,7 @@ function parseTransfermarktSquadDetails(html = "") {
     const preferredFoot = normalizeFoot(cellValues.find((value) => /^(left|right|both)$/i.test(value)) || "");
     const dates = [...row.matchAll(/\d{1,2}\/\d{1,2}\/\d{4}/g)].map((match) => match[0]);
     const joinedIso = parseEuropeanDate(dates[1] || "");
+    const contractEndIso = parseEuropeanDate(dates[2] || "");
 
     details.set(playerNameKey(name), {
       name,
@@ -1312,6 +1330,8 @@ function parseTransfermarktSquadDetails(html = "") {
       preferredFoot,
       joinedIso,
       joined: formatKoreanDate(joinedIso),
+      contractEndIso,
+      contractEnd: formatKoreanDate(contractEndIso),
       transfermarktUrl: absoluteUrl(profilePath, "https://www.transfermarkt.com"),
     });
   });
@@ -1447,8 +1467,8 @@ async function getPlayerDetail(id = "") {
       positionDetailLabel,
       positionLabels: fotmobDetail.positionLabels || [],
       marketValue: fotmobDetail.marketValue || "",
-      contractEnd: fotmobDetail.contractEnd || "",
-      transfermarktUrl: transfermarktDetail.transfermarktUrl || "",
+      contractEnd: fotmobDetail.contractEnd || player.contractEnd || transfermarktDetail.contractEnd || "",
+      transfermarktUrl: player.transfermarktUrl || transfermarktDetail.transfermarktUrl || "",
       fotmobUrl: fotmobDetail.fotmobUrl || "",
       hasOfficialBiography: Boolean(parsePlayerBiography(html)),
     };

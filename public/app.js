@@ -344,10 +344,14 @@ function feedCacheKey(endpoint) {
   return `${feedCacheVersion}:${endpoint}`;
 }
 
+function isCacheablePayload(payload) {
+  return Boolean(payload?.items?.length || payload?.player);
+}
+
 function readCachedPayload(endpoint) {
   try {
     const cached = JSON.parse(sessionStorage.getItem(feedCacheKey(endpoint)) || "null");
-    if (!cached?.payload?.items?.length || Date.now() - cached.savedAt > clientCacheTtlMs) return null;
+    if (!isCacheablePayload(cached?.payload) || Date.now() - cached.savedAt > clientCacheTtlMs) return null;
     return cached.payload;
   } catch {
     return null;
@@ -355,7 +359,7 @@ function readCachedPayload(endpoint) {
 }
 
 function writeCachedPayload(endpoint, payload) {
-  if (!payload?.items?.length) return;
+  if (!isCacheablePayload(payload)) return;
   try {
     sessionStorage.setItem(feedCacheKey(endpoint), JSON.stringify({ savedAt: Date.now(), payload }));
   } catch {
@@ -420,6 +424,72 @@ function warmOtherCaches(currentEndpoint) {
   window.setTimeout(() => {
     warmableEndpoints.filter((endpoint) => endpoint !== currentEndpoint).forEach(warmEndpoint);
   }, 600);
+}
+
+function playerDetailEndpoint(id = "") {
+  return id ? `/api/player-detail?id=${encodeURIComponent(id)}` : "";
+}
+
+const warmedPlayerDetailEndpoints = new Set();
+let squadDetailWarmTimer = 0;
+
+function mergePlayerDetailIntoSquad(payload) {
+  const player = payload?.player;
+  if (!player?.id || !player.detail) return;
+  let changed = false;
+  squadState.items = squadState.items.map((item) => {
+    if (item.id !== player.id) return item;
+    const nextContractEnd = item.contractEnd || player.detail.contractEnd || "";
+    const nextTransfermarktUrl = item.transfermarktUrl || player.detail.transfermarktUrl || "";
+    if (nextContractEnd === item.contractEnd && nextTransfermarktUrl === item.transfermarktUrl) return item;
+    changed = true;
+    return {
+      ...item,
+      contractEnd: nextContractEnd,
+      transfermarktUrl: nextTransfermarktUrl,
+    };
+  });
+  if (changed) renderSquad();
+}
+
+async function warmPlayerDetail(endpoint = "") {
+  if (!endpoint) return;
+  const cached = readCachedPayload(endpoint);
+  if (cached) {
+    mergePlayerDetailIntoSquad(cached);
+    return;
+  }
+  if (warmingEndpoints.has(endpoint) || warmedPlayerDetailEndpoints.has(endpoint)) return;
+  warmingEndpoints.add(endpoint);
+  warmedPlayerDetailEndpoints.add(endpoint);
+  try {
+    const response = await fetch(endpoint, { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    writeCachedPayload(endpoint, payload);
+    mergePlayerDetailIntoSquad(payload);
+  } catch {
+    // Detail warming should never interrupt the squad page.
+  } finally {
+    warmingEndpoints.delete(endpoint);
+  }
+}
+
+function warmSquadPlayerDetails(items = []) {
+  if (!items.length) return;
+  window.clearTimeout(squadDetailWarmTimer);
+  const endpoints = items
+    .map((item) => playerDetailEndpoint(item.id))
+    .filter((endpoint) => endpoint && !readCachedPayload(endpoint) && !warmedPlayerDetailEndpoints.has(endpoint))
+    .slice(0, 10);
+  if (!endpoints.length) return;
+
+  squadDetailWarmTimer = window.setTimeout(async () => {
+    for (const endpoint of endpoints) {
+      await warmPlayerDetail(endpoint);
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+    }
+  }, 900);
 }
 
 function formatDate(value) {
@@ -704,6 +774,8 @@ function filteredSquadItems() {
       ...(item.depthRoles || []),
       item.nationality,
       displayNationality(item.nationality),
+      item.contractEnd,
+      item.contractEndIso,
       item.statusLabel,
     ]
       .join(" ")
@@ -738,7 +810,7 @@ function renderSquadRows(items) {
           </td>
           <td><span class="squad-number">${escapeHtml(item.number || "-")}</span></td>
           <td>
-            <a class="squad-name-link" href="${escapeHtml(playerDetailUrl(item))}">
+            <a class="squad-name-link" href="${escapeHtml(playerDetailUrl(item))}" data-player-detail-endpoint="${escapeHtml(playerDetailEndpoint(item.id))}">
               <strong class="squad-player-name">${escapeHtml(koreanName)}</strong>
             </a>
             ${showEnglishName ? `<span class="squad-player-english">${escapeHtml(item.name)}</span>` : ""}
@@ -747,6 +819,7 @@ function renderSquadRows(items) {
             <span class="position-pill ${escapeHtml(item.positionGroup.toLowerCase())}">${escapeHtml(formatPositionDisplay(item.positionDetailLabel || item.positionLabel))}</span>
           </td>
           <td>${escapeHtml(displayNationality(item.nationality))}</td>
+          <td class="squad-contract">${escapeHtml(item.contractEnd || "-")}</td>
           <td><span class="status-pill ${item.status === "loan" ? "loan" : "first"}">${escapeHtml(item.statusLabel)}</span></td>
           <td>
             ${href ? `<a class="squad-profile-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">공식</a>` : "-"}
@@ -775,6 +848,7 @@ function renderSquad() {
   updateSquadBlock(squadElements.loanTable, squadElements.loanCount, loan);
 
   if (squadElements.empty) squadElements.empty.hidden = Boolean(items.length);
+  warmSquadPlayerDetails(firstTeam.length ? firstTeam : items);
 }
 
 async function refreshSquad() {
@@ -944,12 +1018,20 @@ async function refreshPlayerDetail() {
     return;
   }
 
+  const endpoint = playerDetailEndpoint(id);
+  const cached = readCachedPayload(endpoint);
+  if (cached) {
+    renderPlayerDetail(cached);
+  }
+
   try {
-    const response = await fetch(`/api/player-detail?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    const response = await fetch(endpoint, { cache: "no-store" });
     if (!response.ok) throw new Error("player unavailable");
-    renderPlayerDetail(await response.json());
+    const payload = await response.json();
+    writeCachedPayload(endpoint, payload);
+    renderPlayerDetail(payload);
   } catch {
-    playerDetailElement.innerHTML = `<div class="empty-state">선수 정보를 불러오지 못했습니다.</div>`;
+    if (!cached) playerDetailElement.innerHTML = `<div class="empty-state">선수 정보를 불러오지 못했습니다.</div>`;
   }
 }
 
@@ -2297,6 +2379,17 @@ squadElements.filters?.addEventListener("click", (event) => {
     filter.classList.toggle("is-active", filter === button);
   });
   renderSquad();
+});
+
+[squadElements.firstTeamTable, squadElements.loanTable].forEach((table) => {
+  table?.addEventListener("mouseover", (event) => {
+    const link = event.target.closest("[data-player-detail-endpoint]");
+    if (link) warmPlayerDetail(link.dataset.playerDetailEndpoint || "");
+  });
+  table?.addEventListener("focusin", (event) => {
+    const link = event.target.closest("[data-player-detail-endpoint]");
+    if (link) warmPlayerDetail(link.dataset.playerDetailEndpoint || "");
+  });
 });
 
 injuryElements.refresh?.addEventListener("click", refreshInjuries);
