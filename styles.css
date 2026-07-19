@@ -1531,6 +1531,29 @@ textarea {
   width: 130px;
 }
 
+.squad-table.is-youth {
+  min-width: 680px;
+}
+
+.squad-table.is-youth th:nth-child(1),
+.squad-table.is-youth td:nth-child(1) {
+  width: 76px;
+}
+
+.squad-table.is-youth th:nth-child(2),
+.squad-table.is-youth td:nth-child(2) {
+  width: 42%;
+}
+
+.squad-table.is-youth th:nth-child(3),
+.squad-table.is-youth td:nth-child(3),
+.squad-table.is-youth th:nth-child(4),
+.squad-table.is-youth td:nth-child(4),
+.squad-table.is-youth th:nth-child(5),
+.squad-table.is-youth td:nth-child(5) {
+  width: 140px;
+}
+
 .squad-contract {
   color: #31425f;
   font-size: 13px;
@@ -1641,6 +1664,11 @@ textarea {
 .status-pill.first {
   color: #173d7a;
   background: #e7efff;
+}
+
+.status-pill.youth {
+  color: #126347;
+  background: #def5e8;
 }
 
 .status-pill.loan {

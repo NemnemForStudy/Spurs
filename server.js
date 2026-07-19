@@ -399,6 +399,11 @@ const squadSource = {
   url: "https://www.tottenhamhotspur.com/teams/men/players/",
 };
 
+const u21SquadSource = {
+  label: "Tottenham Hotspur U21",
+  url: "https://www.tottenhamhotspur.com/teams/u21s-mens/squad/",
+};
+
 const injurySource = {
   label: "Transfermarkt",
   baseUrl: "https://www.transfermarkt.com/tottenham-hotspur/ausfallzeiten/verein/148/plus/1",
@@ -1012,7 +1017,7 @@ function primaryPositionLabel(value = "", code = "") {
   return resolvedCode || decodeHtml(value).trim();
 }
 
-function extractSquadImageUrl(card = "") {
+function extractSquadImageUrl(card = "", sourceUrl = squadSource.url) {
   const resourceImages = [
     ...card.matchAll(/https:\/\/resources\.thfc\.pulselive\.com\/photo-resources\/[^"',<>\s]+/gi),
   ].map((match) => match[0]);
@@ -1021,7 +1026,7 @@ function extractSquadImageUrl(card = "") {
   ].map((match) => match[1]);
   const candidates = [...resourceImages, ...directImages];
   const directImage = candidates.find((url) => /\.jpe?g(?:\?|$)/i.test(url)) || candidates[0] || "";
-  return directImage ? absoluteUrl(decodeHtml(directImage), squadSource.url) : "";
+  return directImage ? absoluteUrl(decodeHtml(directImage), sourceUrl) : "";
 }
 
 function isAllowedSquadImageUrl(url = "") {
@@ -1040,11 +1045,13 @@ function squadThumbnailUrl(url = "") {
 function normalizeSquadPlayer(player, index) {
   const name = stripTags(player.name || "");
   const position = stripTags(player.position || "");
-  const status = player.status === "loan" ? "loan" : "first-team";
-  const profileUrl = absoluteUrl(player.profileUrl || "", squadSource.url);
-  const imageUrl = absoluteUrl(player.imageUrl || "", squadSource.url);
+  const status = player.status === "loan" ? "loan" : player.status === "youth" ? "youth" : "first-team";
+  const sourceUrl = player.sourceUrl || squadSource.url;
+  const profileUrl = absoluteUrl(player.profileUrl || "", sourceUrl);
+  const imageUrl = absoluteUrl(player.imageUrl || "", sourceUrl);
   const safeImageUrl = isAllowedSquadImageUrl(imageUrl) ? squadThumbnailUrl(imageUrl) : "";
-  const depthRoles = squadDepthRoles[name] || [playerPositionGroup(position)];
+  const positionGroup = playerPositionGroup(position);
+  const depthRoles = squadDepthRoles[name] || (position ? [positionGroup] : []);
   const normalized = {
     id: `${status}-${stripTags(player.number || "no-number")}-${stripTags(player.name || `player-${index}`)}`
       .toLowerCase()
@@ -1054,13 +1061,14 @@ function normalizeSquadPlayer(player, index) {
     nameKo: squadKoreanNames[name] || name,
     number: stripTags(player.number || ""),
     position,
-    positionGroup: playerPositionGroup(position),
+    positionGroup,
     positionLabel: playerPositionLabel(position),
     depthRoles,
     positionDetailLabel: detailedPositionLabel(depthRoles),
     nationality: stripTags(player.nationality || ""),
     status,
-    statusLabel: status === "loan" ? "임대 중" : "1군",
+    statusLabel: status === "loan" ? (player.sourceTeam === "u21" ? "유스 임대" : "임대 중") : status === "youth" ? "유스" : "1군",
+    sourceTeam: player.sourceTeam || "men",
     profileUrl: isSafeHttpUrl(profileUrl) ? profileUrl : "",
     imageUrl: safeImageUrl,
   };
@@ -1068,7 +1076,10 @@ function normalizeSquadPlayer(player, index) {
   return name ? normalized : null;
 }
 
-function parseTottenhamSquad(html) {
+function parseTottenhamSquad(html, options = {}) {
+  const sourceUrl = options.sourceUrl || squadSource.url;
+  const defaultStatus = options.defaultStatus || "first-team";
+  const sourceTeam = options.sourceTeam || "men";
   const sections = [
     ...html.matchAll(
       /<h3 class="w-team-listing__title">([\s\S]*?)<\/h3>\s*<ul class="w-team-listing__list">([\s\S]*?)<\/ul>/gi,
@@ -1078,7 +1089,7 @@ function parseTottenhamSquad(html) {
   return sections
     .flatMap((section) => {
       const sectionTitle = stripTags(section[1]);
-      const status = /loan/i.test(sectionTitle) ? "loan" : "first-team";
+      const status = /loan/i.test(sectionTitle) ? "loan" : defaultStatus;
       return [...section[2].matchAll(/<li class="w-team-listing__item">([\s\S]*?)<\/li>/gi)].map((item) => {
         const card = item[1];
         const anchor =
@@ -1094,8 +1105,10 @@ function parseTottenhamSquad(html) {
             card.match(/<span class="o-person-pod__nationality">([\s\S]*?)<\/span>/i)?.[1] || "",
           ),
           status,
+          sourceTeam,
+          sourceUrl,
           profileUrl: href,
-          imageUrl: extractSquadImageUrl(card),
+          imageUrl: extractSquadImageUrl(card, sourceUrl),
         };
       });
     })
@@ -1107,12 +1120,18 @@ function summarizeSquad(items) {
   return {
     total: items.length,
     firstTeam: items.filter((item) => item.status === "first-team").length,
+    youth: items.filter((item) => item.status === "youth").length,
     loan: items.filter((item) => item.status === "loan").length,
     GK: items.filter((item) => item.positionGroup === "GK").length,
     DF: items.filter((item) => item.positionGroup === "DF").length,
     MF: items.filter((item) => item.positionGroup === "MF").length,
     FW: items.filter((item) => item.positionGroup === "FW").length,
   };
+}
+
+function uniqueYouthPlayers(youthItems = [], seniorItems = []) {
+  const seniorNames = new Set(seniorItems.map((item) => playerNameKey(item.name)));
+  return youthItems.filter((item) => !seniorNames.has(playerNameKey(item.name)));
 }
 
 async function enrichSquadWithContractDetails(items = []) {
@@ -1200,6 +1219,21 @@ async function getSquadFeed() {
   } catch {
     dataSource = "fallback";
     items = squadFallbackPlayers.map(normalizeSquadPlayer).filter(Boolean);
+  }
+
+  try {
+    const youthHtml = await fetchText(u21SquadSource.url, { timeoutMs: 12_000 });
+    const youthItems = parseTottenhamSquad(youthHtml, {
+      sourceUrl: u21SquadSource.url,
+      defaultStatus: "youth",
+      sourceTeam: "u21",
+    });
+    if (youthItems.length >= 10) {
+      items = [...items, ...uniqueYouthPlayers(youthItems, items)];
+      dataSource = dataSource === "fallback" ? "fallback+u21" : "official+u21";
+    }
+  } catch {
+    dataSource = dataSource === "fallback" ? "fallback" : "official";
   }
 
   items = items.filter((item) => !departedSquadNames.has(item.name));

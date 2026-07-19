@@ -57,11 +57,13 @@
           </label>
           <div id="squadFilters" class="filter-row" aria-label="포지션 필터">
             <button class="filter is-active" type="button" data-squad-filter="ALL">전체</button>
+            <button class="filter" type="button" data-squad-filter="FIRST">1군</button>
+            <button class="filter" type="button" data-squad-filter="YOUTH">유스</button>
+            <button class="filter" type="button" data-squad-filter="LOAN">임대</button>
             <button class="filter" type="button" data-squad-filter="GK">GK</button>
             <button class="filter" type="button" data-squad-filter="DF">DF</button>
             <button class="filter" type="button" data-squad-filter="MF">MF</button>
             <button class="filter" type="button" data-squad-filter="FW">FW</button>
-            <button class="filter" type="button" data-squad-filter="LOAN">임대</button>
           </div>
         </div>
 
@@ -87,6 +89,27 @@
                 </tr>
               </thead>
               <tbody id="firstTeamTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="squad-block" aria-labelledby="youthTitle">
+          <div class="squad-block-title">
+            <h2 id="youthTitle">유스 / U21</h2>
+            <span id="youthCount"></span>
+          </div>
+          <div class="squad-table-wrap">
+            <table class="squad-table is-youth">
+              <thead>
+                <tr>
+                  <th scope="col">사진</th>
+                  <th scope="col">선수</th>
+                  <th scope="col">국적</th>
+                  <th scope="col">상태</th>
+                  <th scope="col">프로필</th>
+                </tr>
+              </thead>
+              <tbody id="youthTable"></tbody>
             </table>
           </div>
         </section>

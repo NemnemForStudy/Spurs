@@ -150,8 +150,10 @@ const squadElements = {
   filters: document.querySelector("#squadFilters"),
   depthChart: document.querySelector("#depthChart"),
   firstTeamTable: document.querySelector("#firstTeamTable"),
+  youthTable: document.querySelector("#youthTable"),
   loanTable: document.querySelector("#loanTable"),
   firstTeamCount: document.querySelector("#firstTeamCount"),
+  youthCount: document.querySelector("#youthCount"),
   loanCount: document.querySelector("#loanCount"),
   empty: document.querySelector("#squadEmpty"),
 };
@@ -691,6 +693,7 @@ function renderSquadStats(payload) {
   const stats = [
     ["전체", filter.total ?? 0],
     ["1군", filter.firstTeam ?? 0],
+    ["유스", filter.youth ?? 0],
     ["임대", filter.loan ?? 0],
     ["GK", filter.GK ?? 0],
     ["DF", filter.DF ?? 0],
@@ -759,6 +762,8 @@ function filteredSquadItems() {
   return squadState.items.filter((item) => {
     const matchesFilter =
       squadState.filter === "ALL" ||
+      (squadState.filter === "FIRST" && item.status === "first-team") ||
+      (squadState.filter === "YOUTH" && item.status === "youth") ||
       (squadState.filter === "LOAN" && item.status === "loan") ||
       item.positionGroup === squadState.filter;
     if (!matchesFilter) return false;
@@ -776,6 +781,7 @@ function filteredSquadItems() {
       displayNationality(item.nationality),
       item.contractEnd,
       item.contractEndIso,
+      item.sourceTeam,
       item.statusLabel,
     ]
       .join(" ")
@@ -785,11 +791,17 @@ function filteredSquadItems() {
   });
 }
 
-function renderSquadRows(items) {
+function statusClassFor(item) {
+  return item.status === "loan" ? "loan" : item.status === "youth" ? "youth" : "first";
+}
+
+function renderSquadRows(items, options = {}) {
   return items
     .map((item) => {
       const href = safeHttpUrl(item.profileUrl);
       const imageUrl = proxiedImageUrl(item.imageUrl);
+      const statusClass = statusClassFor(item);
+      const positionText = item.positionDetailLabel || (item.positionGroup === "OTHER" ? "" : item.positionLabel);
       const koreanName = item.nameKo || item.name;
       const showEnglishName = item.name && item.name !== koreanName;
       const initials = item.name
@@ -799,6 +811,30 @@ function renderSquadRows(items) {
         .map((part) => part[0])
         .join("")
         .toUpperCase();
+      if (options.compactYouth) {
+        return `
+          <tr>
+            <td>
+              ${
+                imageUrl
+                  ? `<img class="squad-photo" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.name)} 사진" loading="eager" decoding="async" />`
+                  : `<span class="squad-photo placeholder" aria-hidden="true">${escapeHtml(initials || "?")}</span>`
+              }
+            </td>
+            <td>
+              <a class="squad-name-link" href="${escapeHtml(playerDetailUrl(item))}" data-player-detail-endpoint="${escapeHtml(playerDetailEndpoint(item.id))}">
+                <strong class="squad-player-name">${escapeHtml(koreanName)}</strong>
+              </a>
+              ${showEnglishName ? `<span class="squad-player-english">${escapeHtml(item.name)}</span>` : ""}
+            </td>
+            <td>${escapeHtml(displayNationality(item.nationality))}</td>
+            <td><span class="status-pill ${statusClass}">${escapeHtml(item.statusLabel)}</span></td>
+            <td>
+              ${href ? `<a class="squad-profile-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">공식</a>` : "-"}
+            </td>
+          </tr>
+        `;
+      }
       return `
         <tr>
           <td>
@@ -816,11 +852,11 @@ function renderSquadRows(items) {
             ${showEnglishName ? `<span class="squad-player-english">${escapeHtml(item.name)}</span>` : ""}
           </td>
           <td>
-            <span class="position-pill ${escapeHtml(item.positionGroup.toLowerCase())}">${escapeHtml(formatPositionDisplay(item.positionDetailLabel || item.positionLabel))}</span>
+            <span class="position-pill ${escapeHtml(item.positionGroup.toLowerCase())}">${escapeHtml(formatPositionDisplay(positionText || "-"))}</span>
           </td>
           <td>${escapeHtml(displayNationality(item.nationality))}</td>
           <td class="squad-contract">${escapeHtml(item.contractEnd || "-")}</td>
-          <td><span class="status-pill ${item.status === "loan" ? "loan" : "first"}">${escapeHtml(item.statusLabel)}</span></td>
+          <td><span class="status-pill ${statusClass}">${escapeHtml(item.statusLabel)}</span></td>
           <td>
             ${href ? `<a class="squad-profile-link" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">공식</a>` : "-"}
           </td>
@@ -833,26 +869,28 @@ function renderSquadRows(items) {
 function updateSquadBlock(table, countElement, items) {
   const block = table?.closest(".squad-block");
   if (!table || !block) return;
-  table.innerHTML = renderSquadRows(items);
+  table.innerHTML = renderSquadRows(items, { compactYouth: table.closest("table")?.classList.contains("is-youth") });
   block.hidden = !items.length;
   if (countElement) countElement.textContent = `${items.length}명`;
 }
 
 function renderSquad() {
-  if (!squadElements.firstTeamTable || !squadElements.loanTable) return;
+  if (!squadElements.firstTeamTable || !squadElements.youthTable || !squadElements.loanTable) return;
   const items = filteredSquadItems();
   const firstTeam = items.filter((item) => item.status === "first-team");
+  const youth = items.filter((item) => item.status === "youth");
   const loan = items.filter((item) => item.status === "loan");
 
   updateSquadBlock(squadElements.firstTeamTable, squadElements.firstTeamCount, firstTeam);
+  updateSquadBlock(squadElements.youthTable, squadElements.youthCount, youth);
   updateSquadBlock(squadElements.loanTable, squadElements.loanCount, loan);
 
   if (squadElements.empty) squadElements.empty.hidden = Boolean(items.length);
-  warmSquadPlayerDetails(firstTeam.length ? firstTeam : items);
+  warmSquadPlayerDetails(firstTeam.length ? firstTeam : items.filter((item) => item.status !== "youth"));
 }
 
 async function refreshSquad() {
-  if (!squadElements.firstTeamTable || !squadElements.loanTable) return;
+  if (!squadElements.firstTeamTable || !squadElements.youthTable || !squadElements.loanTable) return;
 
   const endpoint = "/api/squad";
   const cached = readCachedPayload(endpoint);
@@ -2381,7 +2419,7 @@ squadElements.filters?.addEventListener("click", (event) => {
   renderSquad();
 });
 
-[squadElements.firstTeamTable, squadElements.loanTable].forEach((table) => {
+[squadElements.firstTeamTable, squadElements.youthTable, squadElements.loanTable].forEach((table) => {
   table?.addEventListener("mouseover", (event) => {
     const link = event.target.closest("[data-player-detail-endpoint]");
     if (link) warmPlayerDetail(link.dataset.playerDetailEndpoint || "");
