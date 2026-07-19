@@ -2967,6 +2967,54 @@ function mergeManualResultItems(items = [], snapshot = null) {
   return additions.length ? { items: [...items, ...additions], added: additions.length } : { items, added: 0 };
 }
 
+function resultCupKey(competition = "") {
+  const normalized = String(competition || "").toLowerCase();
+  if (normalized.includes("fa cup")) return "fa";
+  if (normalized.includes("carabao cup") || normalized.includes("efl cup")) return "carabao";
+  return "";
+}
+
+function isProvisionalCupFixture(item = {}) {
+  if (!item.manual || item.outcome !== "scheduled" || !resultCupKey(item.competition)) return false;
+  const opponent = `${item.opponentName || ""} ${item.opponentFullName || ""}`.toLowerCase();
+  return /\btbc\b|to be confirmed|상대 미정/.test(opponent);
+}
+
+function isCarabaoSemiFinalFirstLeg(item = {}) {
+  const round = String(item.matchday || "").toLowerCase();
+  return resultCupKey(item.competition) === "carabao" && round.includes("semi") && round.includes("first");
+}
+
+function cleanupProvisionalCupFixtures(items = []) {
+  const actualCupItems = items.filter((item) => resultCupKey(item.competition) && !isProvisionalCupFixture(item));
+  const eliminationDateByCup = new Map();
+
+  actualCupItems.forEach((item) => {
+    const cup = resultCupKey(item.competition);
+    if (!cup || item.outcome !== "loss" || !item.date || isCarabaoSemiFinalFirstLeg(item)) return;
+    const existing = eliminationDateByCup.get(cup);
+    if (!existing || item.date < existing) eliminationDateByCup.set(cup, item.date);
+  });
+
+  let removed = 0;
+  const filtered = items.filter((item) => {
+    if (!isProvisionalCupFixture(item)) return true;
+    const cup = resultCupKey(item.competition);
+    const replacedByActualTie = actualCupItems.some((actual) => {
+      return resultCupKey(actual.competition) === cup && actual.date && item.date && actual.date === item.date;
+    });
+    const eliminatedAt = eliminationDateByCup.get(cup);
+    const afterElimination = Boolean(eliminatedAt && item.date && item.date >= eliminatedAt);
+    if (replacedByActualTie || afterElimination) {
+      removed += 1;
+      return false;
+    }
+    return true;
+  });
+
+  return { items: filtered, removed };
+}
+
 function summarizeResults(items = []) {
   const played = items.filter((item) => item.outcome !== "scheduled");
   return {
@@ -3015,6 +3063,13 @@ async function getResultFeed(seasonId = "") {
       dataSource = "unavailable";
       items = [];
     }
+  }
+
+  const cleanup = cleanupProvisionalCupFixtures(items);
+  items = cleanup.items;
+  if (cleanup.removed) {
+    dataSource = `${dataSource}+cup-pruned`;
+    snapshotFilter = null;
   }
 
   items = sortResultItems(items);
