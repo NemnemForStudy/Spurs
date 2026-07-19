@@ -116,7 +116,8 @@ const feeds = {
 };
 
 const clientCacheTtlMs = 90_000;
-const feedCacheVersion = "spurs-pulse-feed-v15";
+const clientPersistentCacheTtlMs = 6 * 60 * 60 * 1000;
+const feedCacheVersion = "spurs-pulse-feed-v16";
 const warmingEndpoints = new Set();
 
 const warmableEndpoints = [
@@ -350,14 +351,22 @@ function isCacheablePayload(payload) {
   return Boolean(payload?.items?.length || payload?.player);
 }
 
-function readCachedPayload(endpoint) {
+function readCachedPayloadFromStorage(storage, endpoint, maxAgeMs) {
+  if (!storage) return null;
   try {
-    const cached = JSON.parse(sessionStorage.getItem(feedCacheKey(endpoint)) || "null");
-    if (!isCacheablePayload(cached?.payload) || Date.now() - cached.savedAt > clientCacheTtlMs) return null;
+    const cached = JSON.parse(storage.getItem(feedCacheKey(endpoint)) || "null");
+    if (!isCacheablePayload(cached?.payload) || Date.now() - cached.savedAt > maxAgeMs) return null;
     return cached.payload;
   } catch {
     return null;
   }
+}
+
+function readCachedPayload(endpoint, options = {}) {
+  const sessionPayload = readCachedPayloadFromStorage(sessionStorage, endpoint, clientCacheTtlMs);
+  if (sessionPayload) return sessionPayload;
+  if (options.persistent === false) return null;
+  return readCachedPayloadFromStorage(localStorage, endpoint, clientPersistentCacheTtlMs);
 }
 
 function writeCachedPayload(endpoint, payload) {
@@ -366,6 +375,11 @@ function writeCachedPayload(endpoint, payload) {
     sessionStorage.setItem(feedCacheKey(endpoint), JSON.stringify({ savedAt: Date.now(), payload }));
   } catch {
     // Session storage can be full or disabled; the live fetch still works.
+  }
+  try {
+    localStorage.setItem(feedCacheKey(endpoint), JSON.stringify({ savedAt: Date.now(), payload }));
+  } catch {
+    // Persistent cache is only for faster repeat navigation.
   }
 }
 
@@ -409,7 +423,7 @@ function markRenderedArticleRead(id = "") {
 }
 
 async function warmEndpoint(endpoint) {
-  if (!endpoint || readCachedPayload(endpoint) || warmingEndpoints.has(endpoint)) return;
+  if (!endpoint || readCachedPayload(endpoint, { persistent: false }) || warmingEndpoints.has(endpoint)) return;
   warmingEndpoints.add(endpoint);
   try {
     const response = await fetch(endpoint, { cache: "no-store" });
@@ -610,7 +624,7 @@ async function refreshFeed(name) {
   if (!config.grid) return;
 
   const cached = readCachedPayload(config.endpoint);
-  if (cached && !state.items.length) {
+  if (cached) {
     state.payload = cached;
     state.items = cached.items || [];
     config.status.textContent = feedStatusText(cached);
@@ -894,7 +908,7 @@ async function refreshSquad() {
 
   const endpoint = "/api/squad";
   const cached = readCachedPayload(endpoint);
-  if (cached && !squadState.items.length) {
+  if (cached) {
     squadState.payload = cached;
     squadState.items = cached.items || [];
     if (squadElements.status) squadElements.status.textContent = squadStatusText(cached);
@@ -1175,7 +1189,7 @@ async function refreshInjuries() {
   const requestId = ++injuryState.requestId;
   const endpoint = `/api/injuries?season=${encodeURIComponent(injuryState.season)}`;
   const cached = readCachedPayload(endpoint);
-  if (cached && !injuryState.items.length) {
+  if (cached) {
     injuryState.payload = cached;
     injuryState.items = cached.items || [];
     if (injuryElements.status) injuryElements.status.textContent = injuryStatusText(cached);
@@ -1524,7 +1538,7 @@ async function refreshResults() {
   const requestId = ++resultState.requestId;
   const endpoint = `/api/results?season=${encodeURIComponent(resultState.season)}`;
   const cached = readCachedPayload(endpoint);
-  if (cached && !resultState.items.length) {
+  if (cached) {
     resultState.payload = cached;
     resultState.items = cached.items || [];
     if (resultElements.status) resultElements.status.textContent = resultStatusText(cached);
@@ -1726,7 +1740,7 @@ async function refreshWorldCup() {
   const requestId = ++worldCupState.requestId;
   const endpoint = "/api/world-cup";
   const cached = readCachedPayload(endpoint);
-  if (cached && !worldCupState.items.length) {
+  if (cached) {
     worldCupState.payload = cached;
     worldCupState.items = cached.items || [];
     if (worldCupElements.status) worldCupElements.status.textContent = worldCupStatusText(cached);

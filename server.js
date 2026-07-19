@@ -322,8 +322,10 @@ let squadFeedCache = {
 const imageProxyCache = new Map();
 
 const injuryFeedCache = new Map();
+const injuryLiveRefreshes = new Set();
 
 const resultFeedCache = new Map();
+const resultLiveRefreshes = new Set();
 
 let worldCupFeedCache = {
   expiresAt: 0,
@@ -2741,6 +2743,17 @@ async function getInjuryFeed(seasonId = "") {
     return cached.payload;
   }
 
+  const snapshot = await readSeasonSnapshot("injuries", season.id);
+  if (snapshot && !disableTransfermarktLive) {
+    const payload = buildInjuryPayload(season, snapshot.items, "snapshot", snapshot.filter || null);
+    injuryFeedCache.set(season.id, {
+      expiresAt: Date.now() + cacheTtlMs,
+      payload,
+    });
+    refreshLiveInjuryFeed(season);
+    return payload;
+  }
+
   const squad = await getSquadFeed();
   let items = [];
   let dataSource = "transfermarkt";
@@ -2758,7 +2771,6 @@ async function getInjuryFeed(seasonId = "") {
     });
     items = parseTransfermarktInjuries(html, squad.items);
   } catch {
-    const snapshot = await readSeasonSnapshot("injuries", season.id);
     if (snapshot) {
       dataSource = "snapshot";
       items = snapshot.items;
@@ -2769,7 +2781,18 @@ async function getInjuryFeed(seasonId = "") {
     }
   }
 
-  const payload = {
+  const payload = buildInjuryPayload(season, items, dataSource, snapshotFilter);
+
+  injuryFeedCache.set(season.id, {
+    expiresAt: Date.now() + squadCacheTtlMs,
+    payload,
+  });
+
+  return payload;
+}
+
+function buildInjuryPayload(season, items = [], dataSource = "snapshot", snapshotFilter = null) {
+  return {
     mode: "injuries",
     refreshedAt: new Date().toISOString(),
     source: {
@@ -2783,13 +2806,29 @@ async function getInjuryFeed(seasonId = "") {
     filter: snapshotFilter || summarizeInjuries(items),
     items,
   };
+}
 
-  injuryFeedCache.set(season.id, {
-    expiresAt: Date.now() + squadCacheTtlMs,
-    payload,
-  });
-
-  return payload;
+async function refreshLiveInjuryFeed(season) {
+  if (injuryLiveRefreshes.has(season.id)) return;
+  injuryLiveRefreshes.add(season.id);
+  try {
+    const squad = await getSquadFeed();
+    const html = await fetchText(injurySeasonUrl(season.id), {
+      timeoutMs: 45_000,
+      headers: {
+        "accept-language": "en-US,en;q=0.9",
+      },
+    });
+    const payload = buildInjuryPayload(season, parseTransfermarktInjuries(html, squad.items), "transfermarkt");
+    injuryFeedCache.set(season.id, {
+      expiresAt: Date.now() + squadCacheTtlMs,
+      payload,
+    });
+  } catch {
+    // Snapshot response is already usable; live refresh will retry on a later request.
+  } finally {
+    injuryLiveRefreshes.delete(season.id);
+  }
 }
 
 function resolveResultSeason(seasonId = "") {
@@ -3039,6 +3078,15 @@ async function getResultFeed(seasonId = "") {
   let dataSource = "transfermarkt";
   let snapshotFilter = null;
   const snapshot = await readSeasonSnapshot("results", season.id);
+  if (snapshot && !disableTransfermarktLive) {
+    const payload = buildResultPayload(season, snapshot.items, "snapshot", snapshot.filter || null);
+    resultFeedCache.set(season.id, {
+      expiresAt: Date.now() + cacheTtlMs,
+      payload,
+    });
+    refreshLiveResultFeed(season, snapshot);
+    return payload;
+  }
 
   try {
     if (disableTransfermarktLive) {
@@ -3065,16 +3113,21 @@ async function getResultFeed(seasonId = "") {
     }
   }
 
+  const payload = buildResultPayload(season, items, dataSource, snapshotFilter);
+
+  resultFeedCache.set(season.id, {
+    expiresAt: Date.now() + cacheTtlMs,
+    payload,
+  });
+
+  return payload;
+}
+
+function buildResultPayload(season, items = [], dataSource = "snapshot", snapshotFilter = null) {
   const cleanup = cleanupProvisionalCupFixtures(items);
-  items = cleanup.items;
-  if (cleanup.removed) {
-    dataSource = `${dataSource}+cup-pruned`;
-    snapshotFilter = null;
-  }
-
-  items = sortResultItems(items);
-
-  const payload = {
+  const cleanedItems = sortResultItems(cleanup.items);
+  const resolvedDataSource = cleanup.removed ? `${dataSource}+cup-pruned` : dataSource;
+  return {
     mode: "results",
     refreshedAt: new Date().toISOString(),
     source: {
@@ -3083,18 +3136,36 @@ async function getResultFeed(seasonId = "") {
       season: season.label,
       seasonId: season.id,
       seasons: resultSeasons,
-      dataSource,
+      dataSource: resolvedDataSource,
     },
-    filter: snapshotFilter || summarizeResults(items),
-    items,
+    filter: cleanup.removed ? summarizeResults(cleanedItems) : snapshotFilter || summarizeResults(cleanedItems),
+    items: cleanedItems,
   };
+}
 
-  resultFeedCache.set(season.id, {
-    expiresAt: Date.now() + cacheTtlMs,
-    payload,
-  });
-
-  return payload;
+async function refreshLiveResultFeed(season, snapshot = null) {
+  if (resultLiveRefreshes.has(season.id)) return;
+  resultLiveRefreshes.add(season.id);
+  try {
+    const html = await fetchText(resultSeasonUrl(season.id), {
+      timeoutMs: 45_000,
+      headers: {
+        "accept-language": "en-US,en;q=0.9",
+      },
+    });
+    const parsedItems = parseTransfermarktResults(html, season.id);
+    const merged = mergeManualResultItems(parsedItems, snapshot);
+    const dataSource = merged.added ? "transfermarkt+snapshot" : "transfermarkt";
+    const payload = buildResultPayload(season, merged.items, dataSource);
+    resultFeedCache.set(season.id, {
+      expiresAt: Date.now() + cacheTtlMs,
+      payload,
+    });
+  } catch {
+    // Snapshot response is already usable; live refresh will retry on a later request.
+  } finally {
+    resultLiveRefreshes.delete(season.id);
+  }
 }
 
 const worldCupTeamLabels = {
