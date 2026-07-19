@@ -2947,6 +2947,24 @@ function sortResultItems(items = []) {
   });
 }
 
+function resultItemMergeKey(item = {}) {
+  return [item.date, item.competition, item.matchday, item.opponentFullName || item.opponentName, item.venue]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .join("|");
+}
+
+function mergeManualResultItems(items = [], snapshot = null) {
+  const manualItems = Array.isArray(snapshot?.items) ? snapshot.items.filter((item) => item.manual === true) : [];
+  if (!manualItems.length) return { items, added: 0 };
+  const ids = new Set(items.map((item) => item.id).filter(Boolean));
+  const keys = new Set(items.map(resultItemMergeKey));
+  const additions = manualItems.filter((item) => {
+    const key = resultItemMergeKey(item);
+    return !ids.has(item.id) && !keys.has(key);
+  });
+  return additions.length ? { items: [...items, ...additions], added: additions.length } : { items, added: 0 };
+}
+
 function summarizeResults(items = []) {
   const played = items.filter((item) => item.outcome !== "scheduled");
   return {
@@ -2970,6 +2988,7 @@ async function getResultFeed(seasonId = "") {
   let items = [];
   let dataSource = "transfermarkt";
   let snapshotFilter = null;
+  const snapshot = await readSeasonSnapshot("results", season.id);
 
   try {
     if (disableTransfermarktLive) {
@@ -2982,8 +3001,10 @@ async function getResultFeed(seasonId = "") {
       },
     });
     items = parseTransfermarktResults(html, season.id);
+    const merged = mergeManualResultItems(items, snapshot);
+    items = merged.items;
+    if (merged.added) dataSource = "transfermarkt+snapshot";
   } catch {
-    const snapshot = await readSeasonSnapshot("results", season.id);
     if (snapshot) {
       dataSource = "snapshot";
       items = snapshot.items;

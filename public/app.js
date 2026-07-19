@@ -1249,12 +1249,14 @@ function formatResultDate(item) {
 }
 
 const resultCompetitionLabels = {
+  "Friendly Match": { ko: "친선경기", short: "친선" },
   "Premier League": { ko: "프리미어리그", short: "리그" },
   "UEFA Champions League": { ko: "UEFA 챔피언스리그", short: "챔스" },
   "UEFA Europa League": { ko: "UEFA 유로파리그", short: "유로파" },
   "UEFA Super Cup": { ko: "UEFA 슈퍼컵", short: "슈퍼컵" },
   "FA Cup": { ko: "FA컵", short: "FA컵" },
-  "EFL Cup": { ko: "리그컵", short: "리그컵" },
+  "Carabao Cup": { ko: "카라바오컵", short: "카라바오" },
+  "EFL Cup": { ko: "카라바오컵", short: "카라바오" },
 };
 
 const resultOpponentLabels = {
@@ -1264,12 +1266,15 @@ const resultOpponentLabels = {
   "AZ Alkmaar": "AZ 알크마르",
   "Bodø/Glimt": "보되/글림트",
   Bournemouth: "본머스",
+  "AFC Bournemouth": "본머스",
   Brentford: "브렌트포드",
   Brighton: "브라이튼",
+  "Brighton & Hove Albion": "브라이튼",
   Burnley: "번리",
   Chelsea: "첼시",
   Copenhagen: "코펜하겐",
   Coventry: "코번트리",
+  "Coventry City": "코번트리",
   "Crystal Palace": "크리스털 팰리스",
   Doncaster: "돈캐스터",
   Dortmund: "도르트문트",
@@ -1280,16 +1285,26 @@ const resultOpponentLabels = {
   Fulham: "풀럼",
   Galatasaray: "갈라타사라이",
   Hoffenheim: "호펜하임",
+  "Hull City": "헐 시티",
   Ipswich: "입스위치",
+  "Ipswich Town": "입스위치",
   Leeds: "리즈",
+  "Leeds United": "리즈",
   Leicester: "레스터",
   Liverpool: "리버풀",
   Luton: "루턴",
   "Man City": "맨시티",
+  "Manchester City": "맨시티",
   "Man Utd": "맨유",
+  "Manchester United": "맨유",
+  "MK Dons": "MK 돈스",
+  "Milton Keynes Dons": "밀턴케인스 돈스",
   Monaco: "모나코",
   Newcastle: "뉴캐슬",
+  "Newcastle United": "뉴캐슬",
   "Nott'm Forest": "노팅엄 포레스트",
+  "Nottingham Forest": "노팅엄 포레스트",
+  "Auckland FC": "오클랜드 FC",
   PSG: "파리 생제르맹",
   Qarabağ: "카라바흐",
   Rangers: "레인저스",
@@ -1298,7 +1313,10 @@ const resultOpponentLabels = {
   "Slavia Praha": "슬라비아 프라하",
   Southampton: "사우샘프턴",
   Sunderland: "선덜랜드",
+  "Sydney FC": "시드니 FC",
   Tamworth: "탬워스",
+  TBC: "상대 미정",
+  "To be confirmed": "상대 미정",
   Villarreal: "비야레알",
   "West Ham": "웨스트햄",
   Wolves: "울버햄튼",
@@ -1311,22 +1329,24 @@ function resultCompetitionKorean(competition = "") {
 function resultCompetitionLabel(competition = "") {
   if (resultCompetitionLabels[competition]) return resultCompetitionLabels[competition].short;
   const normalized = competition.toLowerCase();
+  if (normalized.includes("friendly")) return "친선";
   if (normalized.includes("premier league")) return "리그";
   if (normalized.includes("champions league")) return "챔스";
   if (normalized.includes("europa league")) return "유로파";
   if (normalized.includes("fa cup")) return "FA컵";
-  if (normalized.includes("efl cup")) return "리그컵";
+  if (normalized.includes("carabao cup") || normalized.includes("efl cup")) return "카라바오";
   if (normalized.includes("super cup")) return "슈퍼컵";
   return competition || "기타";
 }
 
 function resultCompetitionOrder(competition = "") {
   const normalized = competition.toLowerCase();
+  if (normalized.includes("friendly")) return 0;
   if (normalized.includes("premier league")) return 1;
   if (normalized.includes("champions league")) return 2;
   if (normalized.includes("europa league")) return 3;
   if (normalized.includes("fa cup")) return 4;
-  if (normalized.includes("efl cup")) return 5;
+  if (normalized.includes("carabao cup") || normalized.includes("efl cup")) return 5;
   if (normalized.includes("super cup")) return 6;
   return 99;
 }
