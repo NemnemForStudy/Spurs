@@ -277,7 +277,7 @@ function proxiedImageUrl(value = "") {
   if (!url) return "";
   try {
     const parsed = new URL(url);
-    if (["resources.thfc.pulselive.com", "tmssl.akamaized.net", "a.espncdn.com"].includes(parsed.hostname)) {
+    if (["resources.thfc.pulselive.com", "tmssl.akamaized.net", "a.espncdn.com", "e0.365dm.com"].includes(parsed.hostname)) {
       return `/api/image?url=${encodeURIComponent(parsed.href)}`;
     }
     return url;
@@ -1368,6 +1368,35 @@ function resultOpponentEnglish(item = {}) {
   return compact || full || "-";
 }
 
+function resultLogoFallbackText(item = {}) {
+  const opponent = String(item.opponentName || item.opponentFullName || "").trim();
+  const competition = String(item.competition || "").toLowerCase();
+  if (/^(tbc|to be confirmed|상대 미정)$/i.test(opponent)) {
+    if (competition.includes("fa cup")) return "FA";
+    if (competition.includes("carabao") || competition.includes("efl cup")) return "CC";
+    return "TBC";
+  }
+  const words = opponent
+    .replace(/\b(fc|afc|cf|united|city|town|hotspur)\b/gi, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = words.map((word) => word[0]).join("").slice(0, 3).toUpperCase();
+  return initials || "TH";
+}
+
+function resultLogoPlaceholder(item = {}) {
+  return `<span class="result-logo placeholder" aria-hidden="true">${escapeHtml(resultLogoFallbackText(item))}</span>`;
+}
+
+function replaceBrokenResultLogo(image) {
+  if (!image || !image.parentElement) return;
+  const span = document.createElement("span");
+  span.className = "result-logo placeholder";
+  span.setAttribute("aria-hidden", "true");
+  span.textContent = image.dataset.fallback || "TBC";
+  image.replaceWith(span);
+}
+
 function renderResultFilters() {
   if (!resultElements.filters) return;
   const competitions = resultCompetitions(resultState.items);
@@ -1442,6 +1471,7 @@ function renderResults() {
       const opponentNameKo = resultOpponentKorean(opponentName);
       const opponentNameEn = resultOpponentEnglish(item);
       const competitionKo = resultCompetitionKorean(item.competition);
+      const logoFallback = resultLogoFallbackText(item);
       return `
         <tr class="result-row outcome-${escapeHtml(item.outcome || "played")}">
           <td>
@@ -1459,8 +1489,8 @@ function renderResults() {
             <div class="result-opponent">
               ${
                 logoUrl
-                  ? `<img class="result-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(opponentNameKo)} 로고" loading="eager" decoding="async" />`
-                  : `<span class="result-logo placeholder" aria-hidden="true">TH</span>`
+                  ? `<img class="result-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(opponentNameKo)} 로고" loading="eager" decoding="async" data-fallback="${escapeHtml(logoFallback)}" />`
+                  : resultLogoPlaceholder(item)
               }
               <span>
                 ${
@@ -1480,6 +1510,11 @@ function renderResults() {
       `;
     })
     .join("");
+
+  resultElements.table.querySelectorAll("img.result-logo").forEach((image) => {
+    image.addEventListener("error", () => replaceBrokenResultLogo(image), { once: true });
+    if (image.complete && image.naturalWidth === 0) replaceBrokenResultLogo(image);
+  });
 
   if (resultElements.empty) resultElements.empty.hidden = Boolean(items.length);
 }

@@ -682,7 +682,7 @@ const securityHeaders = {
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self'",
-    "img-src 'self' https://commons.wikimedia.org https://upload.wikimedia.org https://resources.thfc.pulselive.com https://tmssl.akamaized.net https://a.espncdn.com data:",
+    "img-src 'self' https://commons.wikimedia.org https://upload.wikimedia.org https://resources.thfc.pulselive.com https://tmssl.akamaized.net https://a.espncdn.com https://e0.365dm.com data:",
     "connect-src 'self'",
     "font-src 'self'",
     "object-src 'none'",
@@ -847,6 +847,7 @@ const allowedImageProxyHosts = new Set([
   "resources.thfc.pulselive.com",
   "tmssl.akamaized.net",
   "a.espncdn.com",
+  "e0.365dm.com",
 ]);
 
 const imageProxyCacheTtlMs = Number(process.env.IMAGE_CACHE_MS || 12 * 60 * 60 * 1000);
@@ -869,6 +870,7 @@ function imageRefererFor(url = "") {
     if (parsed.hostname === "resources.thfc.pulselive.com") return "https://www.tottenhamhotspur.com/";
     if (parsed.hostname === "tmssl.akamaized.net") return "https://www.transfermarkt.com/";
     if (parsed.hostname === "a.espncdn.com") return "https://www.espn.com/";
+    if (parsed.hostname === "e0.365dm.com") return "https://www.skysports.com/";
   } catch {
     return publicBaseUrl;
   }
